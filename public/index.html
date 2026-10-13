@@ -44,6 +44,9 @@ async function load() {
 
   let html = `<p>Dernier passage : <time>${fmt(s.lastRun)}</time></p>`;
   if (s.lastError) html += `<p class="err">Erreur : ${esc(s.lastError.message)}</p>`;
+  html += s.deck
+    ? `<p>Steam Deck : dernier contact <time>${fmt(s.deck.at)}</time>${s.deck.game ? ` (${esc(s.deck.game)})` : ''}</p>`
+    : '<p class="muted">Steam Deck : jamais vu</p>';
   const unmapped = Object.entries(s.unmapped ?? {});
   if (unmapped.length) html += `<p>Jeux à associer :</p>` + list(unmapped.map(([k, v]) => `${k} (${v.name})`));
   if (s.pending?.length) html += `<p>En attente :</p>` + list(s.pending.map((d) => `${d.name}, ${d.date}, ${Math.round(d.minutes)} min${d.error ? ` (${d.error})` : ''}`));

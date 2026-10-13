@@ -25,7 +25,7 @@ git clone https://github.com/jethequeen/steam-backloggd-sync.git
 cd steam-backloggd-sync/deck && ./install.sh
 ```
 
-Le script demande l'adresse du site et le `SYNC_TOKEN`, puis installe un service qui démarre avec le Deck, en mode Jeu comme en mode Bureau. Pour vérifier ce qu'il détecte pendant qu'un jeu tourne : `python3 ~/.local/bin/backloggd-watch.py --scan`. Journal en direct : `journalctl --user -u backloggd-watch -f`.
+Le script demande l'adresse du site et le `SYNC_TOKEN`, puis installe un service qui démarre avec le Deck, en mode Jeu comme en mode Bureau. À la fin, il affiche le résultat d'un test de connexion au site (OK ou la raison de l'échec) et l'état du service. Pour mettre à jour : `cd ~/steam-backloggd-sync && git pull && bash deck/install.sh`. Pour vérifier ce qu'il détecte pendant qu'un jeu tourne : `python3 ~/.local/bin/backloggd-watch.py --scan`. La page du site indique aussi quand le Deck l'a contacté pour la dernière fois. Journal en direct : `journalctl --user -u backloggd-watch -f`.
 
 > Backloggd n'a pas d'API publique. Ce projet utilise les mêmes endpoints que le site lui-même, tels que documentés par [backloggd-mcp](https://github.com/DenisionSoft/backloggd-mcp). Ils peuvent changer sans préavis.
 

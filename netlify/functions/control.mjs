@@ -1,4 +1,4 @@
-import { loadState, makeBackloggd, runSync, saveCookie, saveReport, saveState } from '../../lib/run.mjs';
+import { loadDeckSeen, loadState, makeBackloggd, markDeckSeen, runSync, saveCookie, saveReport, saveState } from '../../lib/run.mjs';
 
 const json = (status, body) => Response.json(body, { status });
 
@@ -13,6 +13,7 @@ const json = (status, body) => Response.json(body, { status });
  *   POST {"action":"cookie","value":"..."}  replace the Backloggd session cookie without a redeploy
  *   POST {"action":"play","name":"SoulCalibur II (USA)","date":"2026-10-13","minutes":45}
  *                                            day total from the Steam Deck watcher (deck/)
+ *   POST {"action":"ping"}                   connection test from the watcher's --test
  */
 export default async (req) => {
     const token = process.env.SYNC_TOKEN;
@@ -29,6 +30,7 @@ export default async (req) => {
             pending: Object.values(state.days).filter((d) => !d.synced),
             unmapped: state.unmapped,
             mappings: state.mappings,
+            deck: await loadDeckSeen(),
         });
     }
 
@@ -65,8 +67,13 @@ export default async (req) => {
             if (!/^\d{4}-\d{2}-\d{2}$/.test(date ?? '')) return json(400, { error: 'date must be YYYY-MM-DD' });
             if (!Number.isFinite(minutes) || minutes < 0 || minutes > 1440) return json(400, { error: 'minutes must be 0-1440' });
             await saveReport({ name: name.trim(), date, minutes });
+            await markDeckSeen(name.trim());
             return json(202, { ok: true });
         }
+
+        case 'ping':
+            await markDeckSeen();
+            return json(200, { ok: true });
 
         case 'cookie':
             if (!body.value) return json(400, { error: 'value required' });

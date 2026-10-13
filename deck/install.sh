@@ -15,5 +15,9 @@ if [ ! -f "$env_file" ]; then
 fi
 
 systemctl --user daemon-reload
-systemctl --user enable --now backloggd-watch.service
-echo "Installé. Suivi en direct : journalctl --user -u backloggd-watch -f"
+systemctl --user enable backloggd-watch.service
+# Restart so a re-run after git pull picks up the new script.
+systemctl --user restart backloggd-watch.service
+set -a; . "$env_file"; set +a
+python3 "$HOME/.local/bin/backloggd-watch.py" --test
+echo "Service : $(systemctl --user is-active backloggd-watch)"

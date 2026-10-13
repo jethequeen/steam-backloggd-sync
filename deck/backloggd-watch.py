@@ -11,12 +11,14 @@ Config (environment, normally from ~/.config/backloggd-watch.env):
   SYNC_TOKEN   same token as the Netlify site
   ROM_MARKER   path fragment that identifies a ROM (default: /roms/)
 
-Run with --scan to print what it detects right now and exit.
+Run with --scan to print what it detects right now and exit, or --test to check
+that the site accepts this Deck's address and token.
 """
 import json
 import os
 import sys
 import time
+import urllib.error
 import urllib.request
 from datetime import date, timedelta
 from pathlib import Path
@@ -66,8 +68,8 @@ def save_state(state):
     tmp.replace(STATE_FILE)
 
 
-def send(site, token, name, day, minutes):
-    body = json.dumps({'action': 'play', 'name': name, 'date': day, 'minutes': round(minutes, 1)}).encode()
+def post(site, token, payload):
+    body = json.dumps(payload).encode()
     req = urllib.request.Request(
         f'{site.rstrip("/")}/api/control',
         data=body,
@@ -76,6 +78,25 @@ def send(site, token, name, day, minutes):
     )
     with urllib.request.urlopen(req, timeout=15) as res:
         return 200 <= res.status < 300
+
+
+def send(site, token, name, day, minutes):
+    return post(site, token, {'action': 'play', 'name': name, 'date': day, 'minutes': round(minutes, 1)})
+
+
+def test_connection(site, token):
+    """One-line verdict a person can read off the screen."""
+    try:
+        post(site, token, {'action': 'ping'})
+        return 'OK : le site répond et accepte le token.'
+    except urllib.error.HTTPError as err:
+        if err.code == 401:
+            return 'ÉCHEC : token refusé (401). Vérifie SYNC_TOKEN dans ~/.config/backloggd-watch.env.'
+        if err.code == 404:
+            return 'ÉCHEC : adresse introuvable (404). Vérifie SITE_URL dans ~/.config/backloggd-watch.env.'
+        return f'ÉCHEC : le site a répondu {err.code}.'
+    except Exception as err:
+        return f'ÉCHEC : site injoignable ({err}). Vérifie SITE_URL et le Wi-Fi.'
 
 
 def flush(state, site, token):
@@ -103,6 +124,11 @@ def main():
     site, token = os.environ.get('SITE_URL'), os.environ.get('SYNC_TOKEN')
     if not site or not token:
         sys.exit('SITE_URL and SYNC_TOKEN must be set (see ~/.config/backloggd-watch.env)')
+    if '://' not in site:
+        site = f'https://{site}'
+    if '--test' in sys.argv:
+        print(test_connection(site, token))
+        return
 
     state = load_state()
     last_poll = time.time()
