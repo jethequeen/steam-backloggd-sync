@@ -18,6 +18,8 @@ Steam cache le nom des jeux non-Steam à son API publique : elle voit seulement 
 - Si le Deck est hors ligne, les totaux attendent et partent au prochain envoi réussi.
 - Ces jeux apparaissent dans `unmapped` sous une clé comme `ns:SoulCalibur II`, à utiliser comme `appid` dans l'action `map`.
 - Les jeux Steam lancés sur le Deck sont suivis de la même façon (processus `SteamLaunch AppId=…`). Le temps tombe ainsi sur le bon jour même si le jeu reste ouvert pendant une mise en veille. Pendant 24 h après un rapport du Deck pour un jeu, le temps de jeu que Steam rapporte pour ce jeu est ignoré, pour ne pas le compter deux fois.
+- La première session d'un jeu est marquée « Started », sauf si le jeu était déjà marqué Played, Completed, etc. sur Backloggd.
+- Quand tu mets un jeu à Played, Completed ou Retired sur Backloggd, sa dernière session est marquée comme fin (« Finished ») au passage suivant, dans l'heure. Shelved et Abandoned ne marquent rien.
 - Sur la page, « Fiches associées » permet de changer la fiche d'un jeu déjà associé : le jeu repasse dans « À choisir ». Les sessions déjà inscrites restent sur l'ancienne fiche.
 
 Installation, en mode Bureau, dans Konsole :

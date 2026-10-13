@@ -141,6 +141,7 @@ async function load() {
   else html += '<ul>' + s.log.map((e) => `<li class="run"><time>${fmt(e.at)}</time>`
       + (e.played ? list(e.played.map((p) => `Joué : ${p}`)) : '')
       + (e.pushed ? list(e.pushed.map((p) => `Inscrit : ${p}`)) : '')
+      + (e.finished ? list(e.finished.map((p) => `Terminé : ${p}`)) : '')
       + (e.error ? `<div class="err">${esc(e.error)}</div>` : '') + '</li>').join('') + '</ul>';
   out.className = '';
   out.innerHTML = html;
