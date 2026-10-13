@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cleanShortcutName, emptyState, localDate, pushToBackloggd, recordLiveGame, recordPlaytime } from '../lib/sync.mjs';
+import { appendLog, cleanShortcutName, emptyState, localDate, pushToBackloggd, recordLiveGame, recordPlaytime } from '../lib/sync.mjs';
 import { AuthError, BackloggdClient, SESSION_NOTE } from '../lib/backloggd.mjs';
 
 const tz = 'America/Toronto';
@@ -156,4 +156,16 @@ test('fractional minutes are rounded and tiny totals wait for more play', async 
 
 test('shortcut names lose region and revision tags', () => {
     assert.equal(cleanShortcutName('Pokemon - Emerald Version (USA, Europe) [!]'), 'Pokemon - Emerald Version');
+});
+
+test('the journal skips quiet runs and keeps the newest 30', () => {
+    const s = emptyState();
+    appendLog(s, { at: 't0' });
+    assert.deepEqual(s.log, []);
+    for (let i = 0; i < 35; i++) appendLog(s, { at: `t${i}`, gained: [{ name: 'Hades', minutes: 4.6 }] });
+    assert.equal(s.log.length, 30);
+    assert.equal(s.log[0].at, 't34');
+    assert.deepEqual(s.log[0].played, ['Hades +5 min']);
+    appendLog(s, { at: 'x', error: 'Steam GetOwnedGames HTTP 403' });
+    assert.deepEqual(s.log[0], { at: 'x', error: 'Steam GetOwnedGames HTTP 403' });
 });

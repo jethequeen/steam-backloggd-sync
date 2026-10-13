@@ -1,1 +1,65 @@
-<!doctype html><meta charset="utf-8"><title>steam-backloggd-sync</title><p>Rien à voir ici.</p>
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Steam → Backloggd</title>
+<style>
+  :root { color-scheme: light dark; --muted: #888; --err: #d33; --ok: #2a8; }
+  body { font: 14px/1.5 system-ui, sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 16px; }
+  h1 { font-size: 1.2rem; }
+  .muted { color: var(--muted); }
+  .err { color: var(--err); }
+  ul { padding-left: 1.2rem; margin: .2rem 0; }
+  li.run { margin-bottom: .6rem; list-style: none; margin-left: -1.2rem; }
+  time { font-variant-numeric: tabular-nums; }
+  form { display: flex; gap: .5rem; }
+  input { flex: 1; padding: .3rem; }
+</style>
+</head>
+<body>
+<h1>Steam → Backloggd</h1>
+<form id="login" hidden>
+  <input id="token" type="password" placeholder="SYNC_TOKEN" autocomplete="current-password">
+  <button>Voir</button>
+</form>
+<div id="out" class="muted">Chargement…</div>
+<script>
+const out = document.getElementById('out');
+const form = document.getElementById('login');
+const fmt = (iso) => iso ? new Date(iso).toLocaleString('fr-CA', { dateStyle: 'short', timeStyle: 'short' }) : 'jamais';
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const list = (items) => `<ul>${items.map((i) => `<li>${esc(i)}</li>`).join('')}</ul>`;
+
+function getToken() { try { return localStorage.getItem('syncToken'); } catch { return null; } }
+function setToken(t) { try { localStorage.setItem('syncToken', t); } catch {} }
+
+async function load() {
+  const token = getToken();
+  if (!token) { form.hidden = false; out.textContent = ''; return; }
+  const res = await fetch('/api/control', { headers: { Authorization: `Bearer ${token}` } });
+  if (res.status === 401) { form.hidden = false; out.innerHTML = '<span class="err">Token refusé.</span>'; return; }
+  const s = await res.json();
+  form.hidden = true;
+
+  let html = `<p>Dernier passage : <time>${fmt(s.lastRun)}</time></p>`;
+  if (s.lastError) html += `<p class="err">Erreur : ${esc(s.lastError.message)}</p>`;
+  const unmapped = Object.entries(s.unmapped ?? {});
+  if (unmapped.length) html += `<p>Jeux à associer :</p>` + list(unmapped.map(([k, v]) => `${k} (${v.name})`));
+  if (s.pending?.length) html += `<p>En attente :</p>` + list(s.pending.map((d) => `${d.name}, ${d.date}, ${Math.round(d.minutes)} min${d.error ? ` (${d.error})` : ''}`));
+
+  html += '<h2 style="font-size:1rem">Journal</h2>';
+  if (!s.log?.length) html += '<p class="muted">Rien encore.</p>';
+  else html += '<ul>' + s.log.map((e) => `<li class="run"><time>${fmt(e.at)}</time>`
+      + (e.played ? list(e.played.map((p) => `Joué : ${p}`)) : '')
+      + (e.pushed ? list(e.pushed.map((p) => `Inscrit : ${p}`)) : '')
+      + (e.error ? `<div class="err">${esc(e.error)}</div>` : '') + '</li>').join('') + '</ul>';
+  out.className = '';
+  out.innerHTML = html;
+}
+
+form.addEventListener('submit', (e) => { e.preventDefault(); setToken(document.getElementById('token').value.trim()); load(); });
+load().catch((err) => { out.innerHTML = `<span class="err">${esc(err.message)}</span>`; });
+</script>
+</body>
+</html>
