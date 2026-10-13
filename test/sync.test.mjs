@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { appendLog, cleanShortcutName, emptyState, forAccount, recordReportedPlay, localDate, pushToBackloggd, recordLiveGame, recordPlaytime } from '../lib/sync.mjs';
+import { appendLog, cleanShortcutName, emptyState, forAccount, recordReportedPlay, localDate, pushToBackloggd, recordLiveGame, recordPlaytime, resolveGame } from '../lib/sync.mjs';
 import { AuthError, BackloggdClient, SESSION_NOTE } from '../lib/backloggd.mjs';
 
 const tz = 'America/Toronto';
@@ -212,14 +212,36 @@ test('Deck reports set the day total and never shrink it', () => {
 test('Deck reports carry the ROM system through to the Backloggd write', async () => {
     const s = emptyState();
     recordReportedPlay(s, { name: 'SoulCalibur II (USA)', date: '2026-10-13', minutes: 20, system: 'gc' });
-    s.mappings['ns:SoulCalibur II'] = { id: 1565, slug: 'soulcalibur-ii' };
+    s.mappings['ns:gc:SoulCalibur II'] = { id: 1565, slug: 'soulcalibur-ii' };
     const calls = [];
     await pushToBackloggd(s, { upsertDailySession: async (a) => calls.push(a) });
     assert.deepEqual(calls, [{ gameId: 1565, date: '2026-10-13', minutes: 20, platform: 21 }]);
 
-    // A system that arrives after the day was synced still gets sent.
-    recordReportedPlay(s, { name: 'SoulCalibur II (USA)', date: '2026-10-13', minutes: 20, system: 'ps2' });
-    assert.equal(s.days['ns:SoulCalibur II|2026-10-13'].synced, false);
+    // The same title on another system is tracked (and mapped) on its own.
+    recordReportedPlay(s, { name: 'SoulCalibur II (USA)', date: '2026-10-13', minutes: 5, system: 'ps2' });
+    assert.equal(s.days['ns:ps2:SoulCalibur II|2026-10-13'].minutes, 5);
+});
+
+test('picks the Backloggd entry released on the ROM system, the most specific one first', async () => {
+    const backloggd = {
+        autocomplete: async () => [
+            { id: 1565, slug: 'soulcalibur-ii', title: 'SoulCalibur II' },
+            { id: 9001, slug: 'soulcalibur-ii--2', title: 'SoulCalibur II' },
+            { id: 7, slug: 'soulcalibur-ii-hd-online', title: 'SoulCalibur II HD Online' },
+        ],
+        gamePlatforms: async (slug) => ({ 'soulcalibur-ii': ['arcade', 'ps2', 'xbox', 'ngc'], 'soulcalibur-ii--2': ['ngc'] })[slug],
+    };
+    assert.equal((await resolveGame(backloggd, 'Soulcalibur II', 'gc')).match.slug, 'soulcalibur-ii--2');
+    assert.equal((await resolveGame(backloggd, 'Soulcalibur II', 'ps2')).match.slug, 'soulcalibur-ii');
+    // No system: still refuses to guess.
+    assert.equal((await resolveGame(backloggd, 'Soulcalibur II')).candidates.length, 2);
+});
+
+test('reads release platforms from a game page', async () => {
+    const page = '<a class="game-page-platform" href=/games/lib/popular/release_platform:ngc/><i></i> Nintendo GameCube</a>'
+        + '<a class="game-page-platform" href=/games/lib/popular/release_platform:ps2/>PlayStation 2</a>';
+    const client = new BackloggdClient({ sessionCookie: 'abc', fetchImpl: async () => new Response(page, { status: 200 }) });
+    assert.deepEqual(await client.gamePlatforms('soulcalibur-ii'), ['ngc', 'ps2']);
 });
 
 test('sets the platform only when the log has none', async () => {
