@@ -1,0 +1,12 @@
+[Unit]
+Description=Report emulated play time to steam-backloggd-sync
+After=network-online.target
+
+[Service]
+EnvironmentFile=%h/.config/backloggd-watch.env
+ExecStart=/usr/bin/python3 %h/.local/bin/backloggd-watch.py
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=default.target

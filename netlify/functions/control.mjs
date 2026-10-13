@@ -1,4 +1,4 @@
-import { loadState, makeBackloggd, runSync, saveCookie, saveState } from '../../lib/run.mjs';
+import { loadState, makeBackloggd, runSync, saveCookie, saveReport, saveState } from '../../lib/run.mjs';
 
 const json = (status, body) => Response.json(body, { status });
 
@@ -11,6 +11,8 @@ const json = (status, body) => Response.json(body, { status });
  *   POST {"action":"map","appid":N,"skip":true}      never sync this app
  *   Non-Steam games use their key from `unmapped` instead of a number: "appid":"ns:Chrono Trigger"
  *   POST {"action":"cookie","value":"..."}  replace the Backloggd session cookie without a redeploy
+ *   POST {"action":"play","name":"SoulCalibur II (USA)","date":"2026-10-13","minutes":45}
+ *                                            day total from the Steam Deck watcher (deck/)
  */
 export default async (req) => {
     const token = process.env.SYNC_TOKEN;
@@ -54,6 +56,16 @@ export default async (req) => {
             delete state.unmapped[appid];
             await saveState(state);
             return json(200, { appid, mapping: state.mappings[appid] });
+        }
+
+        case 'play': {
+            const { name, date } = body;
+            const minutes = Number(body.minutes);
+            if (typeof name !== 'string' || !name.trim() || name.length > 200) return json(400, { error: 'name required' });
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(date ?? '')) return json(400, { error: 'date must be YYYY-MM-DD' });
+            if (!Number.isFinite(minutes) || minutes < 0 || minutes > 1440) return json(400, { error: 'minutes must be 0-1440' });
+            await saveReport({ name: name.trim(), date, minutes });
+            return json(202, { ok: true });
         }
 
         case 'cookie':

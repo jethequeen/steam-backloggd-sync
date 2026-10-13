@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { appendLog, cleanShortcutName, emptyState, forAccount, localDate, pushToBackloggd, recordLiveGame, recordPlaytime } from '../lib/sync.mjs';
+import { appendLog, cleanShortcutName, emptyState, forAccount, recordReportedPlay, localDate, pushToBackloggd, recordLiveGame, recordPlaytime } from '../lib/sync.mjs';
 import { AuthError, BackloggdClient, SESSION_NOTE } from '../lib/backloggd.mjs';
 
 const tz = 'America/Toronto';
@@ -116,12 +116,12 @@ test('rewrites its own session for the day and skips when unchanged', async () =
     assert.equal(posts[0]['dates[500][1][id]'], undefined);
 });
 
-test('a running non-Steam shortcut is credited the time since the last poll', () => {
+test('a running game missing from the library (family sharing) is credited the time since the last poll', () => {
     let s = emptyState();
     s.snapshot = { 1: 600 };
     s.lastPoll = '2026-10-13T16:00:00Z';
     const now = at('2026-10-13T16:05:00Z');
-    s = recordLiveGame(s, { gameId: '15374772738578399232', name: 'Chrono Trigger (USA)' }, { now, timeZone: tz }).state;
+    s = recordLiveGame(s, { gameId: '2379780', name: 'Chrono Trigger (USA)' }, { now, timeZone: tz }).state;
     assert.equal(s.days['ns:Chrono Trigger|2026-10-13'].minutes, 5);
     assert.equal(s.days['ns:Chrono Trigger|2026-10-13'].name, 'Chrono Trigger');
     assert.equal(s.lastPoll, now.toISOString());
@@ -188,4 +188,23 @@ test('changing STEAM_ID restarts from a fresh snapshot', () => {
     // Without a snapshot the next run only records a starting point.
     const { gained } = recordPlaytime(next, [{ appid: 1, name: 'Hades', playtime: 9000 }], { now: at('2026-10-13T17:00:00Z'), timeZone: tz });
     assert.deepEqual(gained, []);
+});
+
+test('non-Steam shortcut ids are left to the Deck watcher', () => {
+    const s = emptyState();
+    s.snapshot = {};
+    s.lastPoll = '2026-10-13T16:00:00Z';
+    const { gained } = recordLiveGame(s, { gameId: '15374772738578399232', name: 'Non-Steam game' }, { now: at('2026-10-13T16:05:00Z'), timeZone: tz });
+    assert.deepEqual(gained, []);
+});
+
+test('Deck reports set the day total and never shrink it', () => {
+    const s = emptyState();
+    assert.equal(recordReportedPlay(s, { name: 'SoulCalibur II (USA)', date: '2026-10-13', minutes: 20 }), 20);
+    assert.equal(recordReportedPlay(s, { name: 'SoulCalibur II (USA)', date: '2026-10-13', minutes: 20 }), 0);
+    assert.equal(recordReportedPlay(s, { name: 'SoulCalibur II (USA)', date: '2026-10-13', minutes: 5 }), 0);
+    assert.equal(recordReportedPlay(s, { name: 'SoulCalibur II (USA)', date: '2026-10-13', minutes: 45 }), 25);
+    const day = s.days['ns:SoulCalibur II|2026-10-13'];
+    assert.equal(day.minutes, 45);
+    assert.equal(day.synced, false);
 });
