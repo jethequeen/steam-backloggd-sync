@@ -259,3 +259,19 @@ test('sets the platform only when the log has none', async () => {
     await site.client.upsertDailySession({ gameId: 99, date: '2026-10-13', minutes: 30, platform: 21 });
     assert.equal(site.posts[0]['playthroughs[0][played_platform]'], '8');
 });
+
+test('Steam games are matched among same-titled entries as PC games', async () => {
+    const s = emptyState();
+    s.days['632470|2026-10-13'] = { appid: 632470, name: 'Disco Elysium', date: '2026-10-13', minutes: 5, synced: false };
+    const calls = [];
+    const backloggd = {
+        autocomplete: async () => [
+            { id: 1, slug: 'disco-elysium', title: 'Disco Elysium' },
+            { id: 2, slug: 'disco-elysium--1', title: 'Disco Elysium' },
+        ],
+        gamePlatforms: async (slug) => ({ 'disco-elysium': ['win', 'mac', 'ps4--1', 'switch'], 'disco-elysium--1': ['ps5'] })[slug],
+        upsertDailySession: async (a) => calls.push(a),
+    };
+    await pushToBackloggd(s, backloggd);
+    assert.deepEqual(calls, [{ gameId: 1, date: '2026-10-13', minutes: 5, platform: 6 }]);
+});
