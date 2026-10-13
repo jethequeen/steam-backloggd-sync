@@ -356,3 +356,15 @@ test('a game already matched can be put back up for choice, keeping its old entr
     assert.equal(s.unmapped[632470].held, true);
     assert.equal(await reopenChoice(s, backloggd, 1), false);
 });
+
+test('Deck time for a Steam game adds to what Steam counted that day before the Deck took over', () => {
+    const now = at('2026-10-13T16:00:00Z');
+    const s = emptyState();
+    s.days['632470|2026-10-13'] = { appid: 632470, name: 'Disco Elysium', date: '2026-10-13', minutes: 14, synced: true };
+    assert.equal(recordReportedPlay(s, { appid: 632470, name: 'Disco Elysium', date: '2026-10-13', minutes: 10 }, { now }), 10);
+    assert.equal(s.days['632470|2026-10-13'].minutes, 24);
+    assert.equal(s.days['632470|2026-10-13'].synced, false);
+    assert.equal(recordReportedPlay(s, { appid: 632470, name: 'Disco Elysium', date: '2026-10-13', minutes: 10 }, { now }), 0);
+    assert.equal(recordReportedPlay(s, { appid: 632470, name: 'Disco Elysium', date: '2026-10-13', minutes: 25 }, { now }), 15);
+    assert.equal(s.days['632470|2026-10-13'].minutes, 39);
+});
