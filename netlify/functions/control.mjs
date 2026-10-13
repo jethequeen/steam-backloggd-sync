@@ -23,6 +23,7 @@ export default async (req) => {
         return json(200, {
             lastRun: state.lastRun,
             lastError: state.lastError,
+            log: state.log,
             pending: Object.values(state.days).filter((d) => !d.synced),
             unmapped: state.unmapped,
             mappings: state.mappings,
