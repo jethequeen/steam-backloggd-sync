@@ -9,6 +9,7 @@ const json = (status, body) => Response.json(body, { status });
  *   POST {"action":"run"}                    run a sync now
  *   POST {"action":"map","appid":N,"slug":"hades"}   pin a Steam app to a Backloggd game
  *   POST {"action":"map","appid":N,"skip":true}      never sync this app
+ *   Non-Steam games use their key from `unmapped` instead of a number: "appid":"ns:Chrono Trigger"
  *   POST {"action":"cookie","value":"..."}  replace the Backloggd session cookie without a redeploy
  */
 export default async (req) => {
@@ -36,8 +37,8 @@ export default async (req) => {
             return json(200, await runSync());
 
         case 'map': {
-            const appid = Number(body.appid);
-            if (!Number.isFinite(appid)) return json(400, { error: 'appid required' });
+            const appid = String(body.appid ?? '').startsWith('ns:') ? body.appid : Number(body.appid);
+            if (typeof appid === 'number' && !Number.isFinite(appid)) return json(400, { error: 'appid required' });
             const state = await loadState();
             if (body.skip) {
                 state.mappings[appid] = null;
