@@ -11,8 +11,9 @@ const json = (status, body) => Response.json(body, { status });
  *   POST {"action":"map","appid":N,"skip":true}      never sync this app
  *   Non-Steam games use their key from `unmapped` instead of a number: "appid":"ns:Chrono Trigger"
  *   POST {"action":"cookie","value":"..."}  replace the Backloggd session cookie without a redeploy
- *   POST {"action":"play","name":"SoulCalibur II (USA)","date":"2026-10-13","minutes":45}
+ *   POST {"action":"play","name":"SoulCalibur II (USA)","date":"2026-10-13","minutes":45,"system":"gc"}
  *                                            day total from the Steam Deck watcher (deck/)
+ *   POST {"action":"inspect","gameId":1565}  raw Backloggd log for one game (debugging)
  *   POST {"action":"ping"}                   connection test from the watcher's --test
  */
 export default async (req) => {
@@ -66,9 +67,18 @@ export default async (req) => {
             if (typeof name !== 'string' || !name.trim() || name.length > 200) return json(400, { error: 'name required' });
             if (!/^\d{4}-\d{2}-\d{2}$/.test(date ?? '')) return json(400, { error: 'date must be YYYY-MM-DD' });
             if (!Number.isFinite(minutes) || minutes < 0 || minutes > 1440) return json(400, { error: 'minutes must be 0-1440' });
-            await saveReport({ name: name.trim(), date, minutes });
+            const system = typeof body.system === 'string' && /^[a-z0-9_-]{1,20}$/.test(body.system) ? body.system : undefined;
+            await saveReport({ name: name.trim(), date, minutes, system });
             await markDeckSeen(name.trim());
             return json(202, { ok: true });
+        }
+
+        case 'inspect': {
+            // Raw Backloggd log for one game, to check what the site stores (platform format, sessions).
+            const gameId = Number(body.gameId);
+            if (!Number.isInteger(gameId) || gameId <= 0) return json(400, { error: 'gameId required' });
+            const backloggd = await makeBackloggd();
+            return json(200, await backloggd.getGameLog(gameId));
         }
 
         case 'ping':

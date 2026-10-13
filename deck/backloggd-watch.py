@@ -32,8 +32,8 @@ STATE_FILE = Path.home() / '.local/state/backloggd-watch.json'
 
 
 def running_games(marker):
-    """Names of the ROMs open in any process right now."""
-    games = set()
+    """The ROMs open in any process right now, as {name: system folder}, e.g. {"SoulCalibur II (USA)": "gc"}."""
+    games = {}
     me = os.getpid()
     for pid in os.listdir('/proc'):
         if not pid.isdigit() or int(pid) == me:
@@ -50,7 +50,8 @@ def running_games(marker):
             stem, dot, ext = name.rpartition('.')
             # A bare folder (".../roms/gc") is a system, not a game.
             if dot and stem and 1 <= len(ext) <= 5:
-                games.add(stem)
+                # EmuDeck and Steam ROM Manager keep one folder per system: .../roms/gc/...
+                games[stem] = arg.split(marker, 1)[1].split('/', 1)[0].lower()
     return games
 
 
@@ -80,8 +81,11 @@ def post(site, token, payload):
         return 200 <= res.status < 300
 
 
-def send(site, token, name, day, minutes):
-    return post(site, token, {'action': 'play', 'name': name, 'date': day, 'minutes': round(minutes, 1)})
+def send(site, token, name, day, minutes, system=None):
+    payload = {'action': 'play', 'name': name, 'date': day, 'minutes': round(minutes, 1)}
+    if system:
+        payload['system'] = system
+    return post(site, token, payload)
 
 
 def test_connection(site, token):
@@ -108,7 +112,7 @@ def flush(state, site, token):
         if minutes is None:
             continue
         try:
-            send(site, token, name, day, minutes)
+            send(site, token, name, day, minutes, state.setdefault('systems', {}).get(name))
         except Exception as err:  # offline, site down: retry next flush
             print(f'send failed for {name}: {err}', file=sys.stderr)
             still_dirty.append(key)
@@ -118,7 +122,7 @@ def flush(state, site, token):
 def main():
     marker = os.environ.get('ROM_MARKER', '/roms/')
     if '--scan' in sys.argv:
-        print(sorted(running_games(marker)) or 'no game running')
+        print(running_games(marker) or 'no game running')
         return
 
     site, token = os.environ.get('SITE_URL'), os.environ.get('SYNC_TOKEN')
@@ -134,12 +138,15 @@ def main():
     last_poll = time.time()
     last_send = 0.0
     previous = set()
+    state.setdefault('systems', {})
 
     while True:
         time.sleep(POLL_SECONDS)
         now = time.time()
         gap, last_poll = now - last_poll, now
-        games = running_games(marker)
+        found = running_games(marker)
+        games = set(found)
+        state['systems'].update(found)
         today = date.today().isoformat()
 
         if games and gap <= MAX_GAP_SECONDS:
