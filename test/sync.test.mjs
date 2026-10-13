@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { appendLog, cleanShortcutName, emptyState, localDate, pushToBackloggd, recordLiveGame, recordPlaytime } from '../lib/sync.mjs';
+import { appendLog, cleanShortcutName, emptyState, forAccount, localDate, pushToBackloggd, recordLiveGame, recordPlaytime } from '../lib/sync.mjs';
 import { AuthError, BackloggdClient, SESSION_NOTE } from '../lib/backloggd.mjs';
 
 const tz = 'America/Toronto';
@@ -168,4 +168,24 @@ test('the journal skips quiet runs and keeps the newest 30', () => {
     assert.deepEqual(s.log[0].played, ['Hades +5 min']);
     appendLog(s, { at: 'x', error: 'Steam GetOwnedGames HTTP 403' });
     assert.deepEqual(s.log[0], { at: 'x', error: 'Steam GetOwnedGames HTTP 403' });
+});
+
+test('changing STEAM_ID restarts from a fresh snapshot', () => {
+    const s = emptyState();
+    s.steamId = '111';
+    s.snapshot = { 1: 600 };
+    s.lastPoll = '2026-10-13T16:00:00Z';
+    s.days['1|2026-10-13'] = { appid: 1, name: 'Hades', date: '2026-10-13', minutes: 30, synced: false };
+    s.days['2|2026-10-12'] = { appid: 2, name: 'Celeste', date: '2026-10-12', minutes: 10, synced: true };
+
+    assert.equal(forAccount(s, '111'), s);
+    const next = forAccount(s, '222');
+    assert.equal(next.steamId, '222');
+    assert.equal(next.snapshot, null);
+    assert.equal(next.lastPoll, null);
+    assert.deepEqual(Object.keys(next.days), ['2|2026-10-12']);
+
+    // Without a snapshot the next run only records a starting point.
+    const { gained } = recordPlaytime(next, [{ appid: 1, name: 'Hades', playtime: 9000 }], { now: at('2026-10-13T17:00:00Z'), timeZone: tz });
+    assert.deepEqual(gained, []);
 });
