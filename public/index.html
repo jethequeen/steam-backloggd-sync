@@ -77,6 +77,16 @@ function pickHtml(key, v) {
 }
 
 function wirePicks() {
+  for (const btn of out.querySelectorAll('.rechoose')) {
+    btn.addEventListener('click', async () => {
+      const key = btn.dataset.key;
+      btn.disabled = true;
+      btn.textContent = 'Recherche des fiches…';
+      const res = await post({ action: 'rechoose', appid: key.startsWith('ns:') ? key : Number(key) });
+      if (!res.ok) { btn.textContent = (await res.json().catch(() => ({}))).error ?? `Erreur ${res.status}`; return; }
+      load();
+    });
+  }
   for (const box of out.querySelectorAll('.pick')) {
     const slug = box.querySelector('.slug');
     slug.addEventListener('focus', () => { box.querySelector('input[value="__other"]').checked = true; });
@@ -120,6 +130,10 @@ async function load() {
     : '<p class="muted">Steam Deck : jamais vu</p>';
   const unmapped = Object.entries(s.unmapped ?? {});
   if (unmapped.length) html += '<h2 style="font-size:1rem">À choisir</h2>' + unmapped.map(([key, v]) => pickHtml(key, v)).join('');
+  const mapped = Object.entries(s.mappings ?? {}).filter(([, m]) => m);
+  if (mapped.length) html += '<details><summary>Fiches associées</summary><ul>' + mapped.map(([key, m]) => `<li>`
+      + `<a href="https://backloggd.com/games/${encodeURIComponent(m.slug)}/" target="_blank" rel="noopener">${esc(m.title)}</a>`
+      + `${m.year ? ` (${esc(m.year)})` : ''} <button class="rechoose" data-key="${esc(key)}">Changer</button></li>`).join('') + '</ul></details>';
   if (s.pending?.length) html += `<p>En attente :</p>` + list(s.pending.map((d) => `${d.name}, ${d.date}, ${Math.round(d.minutes)} min${d.error ? ` (${d.error})` : ''}`));
 
   html += '<h2 style="font-size:1rem">Journal</h2>';
