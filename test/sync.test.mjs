@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { appendLog, cleanShortcutName, emptyState, forAccount, recordReportedPlay, localDate, pushToBackloggd, recordLiveGame, recordPlaytime, resolveGame } from '../lib/sync.mjs';
+import { appendLog, cleanShortcutName, emptyState, forAccount, recordReportedPlay, localDate, pushToBackloggd, recordLiveGame, recordPlaytime, reopenChoice, resolveGame } from '../lib/sync.mjs';
 import { AuthError, BackloggdClient, SESSION_NOTE } from '../lib/backloggd.mjs';
 
 const tz = 'America/Toronto';
@@ -325,4 +325,34 @@ test('the first session of a new log is marked as started, and existing marks ar
     assert.equal(site.posts[0]['dates[500][0][start_date]'], '2026-10-01');
     assert.equal(site.posts[0]['dates[500][0][finish_date]'], '2026-10-01');
     assert.equal(site.posts[0]['dates[500][1][start_date]'], '');
+});
+
+test('a Steam game the Deck reports is counted on the Deck day, not again from Steam playtime', () => {
+    const now = at('2026-10-14T13:00:00Z');
+    let s = recordPlaytime(emptyState(), [{ appid: 632470, name: 'Disco Elysium', playtime: 100 }], { now, timeZone: tz }).state;
+    // Played late on the 13th, Deck slept, Steam only adds the time the next morning.
+    assert.equal(recordReportedPlay(s, { appid: 632470, name: 'Disco Elysium', date: '2026-10-13', minutes: 40 }, { now }), 40);
+    const { state, gained } = recordPlaytime(s, [{ appid: 632470, name: 'Disco Elysium', playtime: 140 }], { now, timeZone: tz });
+    assert.deepEqual(gained, []);
+    assert.deepEqual(Object.keys(state.days), ['632470|2026-10-13']);
+    assert.equal(state.snapshot[632470], 140);
+
+    // Played elsewhere two days later: Steam's playtime counts again.
+    const later = at('2026-10-16T13:00:00Z');
+    assert.equal(recordPlaytime(state, [{ appid: 632470, name: 'Disco Elysium', playtime: 170 }], { now: later, timeZone: tz }).gained[0].minutes, 30);
+});
+
+test('a game already matched can be put back up for choice, keeping its old entry as an option', async () => {
+    const s = emptyState();
+    s.mappings[632470] = { id: 1, slug: 'disco-elysium', title: 'Disco Elysium' };
+    s.days['632470|2026-10-13'] = { appid: 632470, name: 'Disco Elysium', date: '2026-10-13', minutes: 5, synced: true };
+    const backloggd = {
+        autocomplete: async () => [{ id: 2, slug: 'disco-elysium-the-final-cut', title: 'Disco Elysium: The Final Cut' }],
+        gameDetails: async () => ({ platforms: ['win'] }),
+    };
+    assert.equal(await reopenChoice(s, backloggd, 632470), true);
+    assert.equal(s.mappings[632470], undefined);
+    assert.deepEqual(s.unmapped[632470].candidates.map((c) => c.slug), ['disco-elysium-the-final-cut', 'disco-elysium']);
+    assert.equal(s.unmapped[632470].held, true);
+    assert.equal(await reopenChoice(s, backloggd, 1), false);
 });
