@@ -222,26 +222,54 @@ test('Deck reports carry the ROM system through to the Backloggd write', async (
     assert.equal(s.days['ns:ps2:SoulCalibur II|2026-10-13'].minutes, 5);
 });
 
-test('picks the Backloggd entry released on the ROM system, the most specific one first', async () => {
-    const backloggd = {
-        autocomplete: async () => [
-            { id: 1565, slug: 'soulcalibur-ii', title: 'SoulCalibur II' },
-            { id: 9001, slug: 'soulcalibur-ii--2', title: 'SoulCalibur II' },
-            { id: 7, slug: 'soulcalibur-ii-hd-online', title: 'SoulCalibur II HD Online' },
-        ],
-        gamePlatforms: async (slug) => ({ 'soulcalibur-ii': ['arcade', 'ps2', 'xbox', 'ngc'], 'soulcalibur-ii--2': ['ngc'] })[slug],
-    };
-    assert.equal((await resolveGame(backloggd, 'Soulcalibur II', 'gc')).match.slug, 'soulcalibur-ii--2');
-    assert.equal((await resolveGame(backloggd, 'Soulcalibur II', 'ps2')).match.slug, 'soulcalibur-ii');
-    // No system: still refuses to guess.
-    assert.equal((await resolveGame(backloggd, 'Soulcalibur II')).candidates.length, 2);
+const soulcalibur = () => ({
+    autocomplete: async () => [
+        { id: 1565, slug: 'soulcalibur-ii', title: 'SoulCalibur II' },
+        { id: 9001, slug: 'soulcalibur-ii--2', title: 'SoulCalibur II' },
+        { id: 7, slug: 'soulcalibur-ii-hd-online', title: 'SoulCalibur II HD Online' },
+        { id: 8, slug: 'soulcalibur-iii', title: 'SoulCalibur III' },
+    ],
+    gameDetails: async (slug) => ({
+        'soulcalibur-ii': { platforms: ['arcade', 'ps2', 'xbox', 'ngc'] },
+        'soulcalibur-ii--2': { platforms: ['ngc'] },
+        'soulcalibur-ii-hd-online': { platforms: ['ps3', 'xbox360'] },
+    })[slug],
 });
 
-test('reads release platforms from a game page', async () => {
-    const page = '<a class="game-page-platform" href=/games/lib/popular/release_platform:ngc/><i></i> Nintendo GameCube</a>'
-        + '<a class="game-page-platform" href=/games/lib/popular/release_platform:ps2/>PlayStation 2</a>';
-    const client = new BackloggdClient({ sessionCookie: 'abc', fetchImpl: async () => new Response(page, { status: 200 }) });
-    assert.deepEqual(await client.gamePlatforms('soulcalibur-ii'), ['ngc', 'ps2']);
+test('several possible entries are held for a choice, the ROM system deciding the suggestion', async () => {
+    const gc = await resolveGame(soulcalibur(), 'Soulcalibur II', 'gc');
+    assert.equal(gc.match, undefined);
+    // Same title and its HD release, not the sequel.
+    assert.deepEqual(gc.candidates.map((c) => c.slug), ['soulcalibur-ii', 'soulcalibur-ii--2', 'soulcalibur-ii-hd-online']);
+    assert.equal(gc.suggested, 'soulcalibur-ii--2');
+    assert.equal((await resolveGame(soulcalibur(), 'Soulcalibur II', 'ps2')).suggested, 'soulcalibur-ii');
+    assert.equal((await resolveGame(soulcalibur(), 'Soulcalibur II', 'ps3')).suggested, 'soulcalibur-ii-hd-online');
+});
+
+test('editions Backloggd lists are offered too, and one possible entry is taken directly', async () => {
+    const backloggd = {
+        autocomplete: async () => [{ id: 1, slug: 'disco-elysium', title: 'Disco Elysium' }],
+        editions: async (id) => (id === 1 ? [{ id: 2, slug: 'disco-elysium-the-final-cut', title: 'Disco Elysium: The Final Cut' }] : []),
+    };
+    const { candidates, suggested } = await resolveGame(backloggd, 'Disco Elysium', 'pc');
+    assert.deepEqual(candidates.map((c) => c.slug), ['disco-elysium', 'disco-elysium-the-final-cut']);
+    assert.equal(suggested, 'disco-elysium');
+
+    const single = { autocomplete: async () => [{ id: 3, slug: 'celeste', title: 'Celeste' }] };
+    assert.equal((await resolveGame(single, 'Celeste', 'pc')).match.slug, 'celeste');
+});
+
+test('reads release platforms, cover and editions from Backloggd pages', async () => {
+    const pages = {
+        '/games/soulcalibur-ii/': '<meta property="og:image" content="https://images.igdb.com/x.jpg">'
+            + '<a class="game-page-platform" href=/games/lib/popular/release_platform:ngc/><i></i> Nintendo GameCube</a>'
+            + '<a class="game-page-platform" href=/games/lib/popular/release_platform:ps2/>PlayStation 2</a>',
+        '/update_game_detail/1/editions/': '<div class="card game-cover" game_id="2"><a class="cover-link" href="/games/disco-elysium-the-final-cut/">'
+            + '<img class="card-img" alt="Disco Elysium: The Final Cut &amp; more"></a></div>',
+    };
+    const client = new BackloggdClient({ sessionCookie: 'abc', fetchImpl: async (url) => new Response(pages[new URL(url).pathname] ?? '', { status: 200 }) });
+    assert.deepEqual(await client.gameDetails('soulcalibur-ii'), { platforms: ['ngc', 'ps2'], cover: 'https://images.igdb.com/x.jpg' });
+    assert.deepEqual(await client.editions(1), [{ id: 2, slug: 'disco-elysium-the-final-cut', title: 'Disco Elysium: The Final Cut & more' }]);
 });
 
 test('sets the platform only when the log has none', async () => {
@@ -260,18 +288,41 @@ test('sets the platform only when the log has none', async () => {
     assert.equal(site.posts[0]['playthroughs[0][played_platform]'], '8');
 });
 
-test('Steam games are matched among same-titled entries as PC games', async () => {
+test('a held Steam game waits for a choice, is not looked up again, then lands as a PC game', async () => {
     const s = emptyState();
     s.days['632470|2026-10-13'] = { appid: 632470, name: 'Disco Elysium', date: '2026-10-13', minutes: 5, synced: false };
+    let lookups = 0;
     const calls = [];
     const backloggd = {
-        autocomplete: async () => [
+        autocomplete: async () => { lookups++; return [
             { id: 1, slug: 'disco-elysium', title: 'Disco Elysium' },
             { id: 2, slug: 'disco-elysium--1', title: 'Disco Elysium' },
-        ],
-        gamePlatforms: async (slug) => ({ 'disco-elysium': ['win', 'mac', 'ps4--1', 'switch'], 'disco-elysium--1': ['ps5'] })[slug],
+        ]; },
+        gameDetails: async (slug) => ({ 'disco-elysium': { platforms: ['win', 'mac', 'ps4--1'] }, 'disco-elysium--1': { platforms: ['ps5'] } })[slug],
         upsertDailySession: async (a) => calls.push(a),
     };
     await pushToBackloggd(s, backloggd);
+    await pushToBackloggd(s, backloggd);
+    assert.equal(lookups, 1);
+    assert.deepEqual(calls, []);
+    assert.equal(s.unmapped[632470].suggested, 'disco-elysium');
+
+    // What the page's "Enregistrer" does.
+    s.mappings[632470] = s.unmapped[632470].candidates[0];
+    delete s.unmapped[632470];
+    await pushToBackloggd(s, backloggd);
     assert.deepEqual(calls, [{ gameId: 1, date: '2026-10-13', minutes: 5, platform: 6 }]);
+});
+
+test('the first session of a new log is marked as started, and existing marks are kept', async () => {
+    let site = fakeSite([{ id: 500, play_dates: [] }]);
+    await site.client.upsertDailySession({ gameId: 99, date: '2026-10-13', minutes: 20 });
+    assert.equal(site.posts[0]['dates[500][0][start_date]'], '2026-10-13');
+
+    const finished = { id: 11, range_start_date: '2026-10-01', range_end_date: '2026-10-02', hours: 1, minutes: 0, note: 'manual', start_date: '2026-10-01', finish_date: '2026-10-01' };
+    site = fakeSite([{ id: 500, play_dates: [finished] }]);
+    await site.client.upsertDailySession({ gameId: 99, date: '2026-10-13', minutes: 20 });
+    assert.equal(site.posts[0]['dates[500][0][start_date]'], '2026-10-01');
+    assert.equal(site.posts[0]['dates[500][0][finish_date]'], '2026-10-01');
+    assert.equal(site.posts[0]['dates[500][1][start_date]'], '');
 });

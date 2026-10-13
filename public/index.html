@@ -14,10 +14,22 @@
   li.run { margin-bottom: .6rem; list-style: none; margin-left: -1.2rem; }
   time { font-variant-numeric: tabular-nums; }
   form { display: flex; gap: .5rem; }
+  form[hidden] { display: none; }
   input { flex: 1; padding: .3rem; }
-  .pick { margin: .4rem 0 .8rem; }
-  .pick select, .pick input { max-width: 100%; padding: .3rem; }
-  .pick .row { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; margin-top: .2rem; }
+  .pick { margin: .6rem 0 1.2rem; padding: .8rem; border: 1px solid color-mix(in srgb, currentColor 20%, transparent); border-radius: 8px; }
+  .pick h3 { font-size: 1rem; margin: 0 0 .2rem; }
+  .choices { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: .6rem; margin: .6rem 0; }
+  .choice { display: block; position: relative; cursor: pointer; border: 2px solid transparent; border-radius: 6px; padding: .3rem; }
+  .choice:has(input:checked) { border-color: var(--ok); }
+  .choices .choice input { position: absolute; opacity: 0; }
+  .row .choice { display: inline-flex; gap: .3rem; align-items: center; border: 0; padding: 0; }
+  .row .choice input { flex: none; }
+  .choice img, .choice .nocover { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 4px; background: color-mix(in srgb, currentColor 10%, transparent); display: block; }
+  .choice .t { font-weight: 600; line-height: 1.2; margin-top: .3rem; }
+  .choice .m { font-size: 12px; color: var(--muted); }
+  .choice .tag { font-size: 11px; color: var(--ok); }
+  .pick .row { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
+  .pick .row input.slug { flex: 1; min-width: 12rem; }
 </style>
 </head>
 <body>
@@ -37,34 +49,46 @@ const list = (items) => `<ul>${items.map((i) => `<li>${esc(i)}</li>`).join('')}<
 function getToken() { try { return localStorage.getItem('syncToken'); } catch { return null; } }
 function setToken(t) { try { localStorage.setItem('syncToken', t); } catch {} }
 
-// One dropdown per game the site would not guess: Backloggd entries it found, "never sync", or a slug typed by hand.
+const PLATFORMS = { win: 'PC', mac: 'Mac', linux: 'Linux', switch: 'Switch', ngc: 'GameCube', wii: 'Wii', wiiu: 'Wii U', n64: 'N64', snes: 'SNES', nes: 'NES',
+  gb: 'Game Boy', gbc: 'GBC', gba: 'GBA', nds: 'DS', '3ds': '3DS', ps: 'PS1', ps2: 'PS2', ps3: 'PS3', 'ps4--1': 'PS4', ps5: 'PS5', psp: 'PSP', psvita: 'Vita',
+  xbox: 'Xbox', xbox360: 'Xbox 360', xboxone: 'Xbox One', 'series-x-s': 'Xbox Series', arcade: 'Arcade', dc: 'Dreamcast', saturn: 'Saturn',
+  'genesis-slash-megadrive': 'Mega Drive', sms: 'Master System', gamegear: 'Game Gear', ios: 'iOS', android: 'Android', 'switch-2': 'Switch 2' };
+const platformNames = (list) => (list ?? []).map((p) => PLATFORMS[p] ?? p).join(', ');
+
+// One card per game the site holds back: every Backloggd entry it could be, the best guess preselected.
 function pickHtml(key, v) {
-  const opts = (v.candidates ?? []).map((c) =>
-    `<option value="${esc(c.slug)}">${esc(c.title)}${c.year ? ` (${c.year})` : ''} · ${esc(c.slug)}</option>`).join('');
-  return `<div class="pick" data-key="${esc(key)}"><strong>${esc(v.name)}</strong>
-    <div class="row"><select>${opts}<option value="__other">Autre fiche (slug)…</option><option value="__skip">Ne jamais synchroniser</option></select>
-    <input class="slug" placeholder="slug Backloggd, ex. disco-elysium" hidden>
-    <a class="see" target="_blank" rel="noopener">voir</a>
-    <button>Enregistrer</button></div><div class="msg muted"></div></div>`;
+  const name = `pick-${key}`;
+  const choice = (value, inner, checked) =>
+    `<label class="choice"><input type="radio" name="${esc(name)}" value="${esc(value)}"${checked ? ' checked' : ''}>${inner}</label>`;
+  const cards = (v.candidates ?? []).map((c) => choice(c.slug,
+    (c.cover ? `<img src="${esc(c.cover)}" alt="" loading="lazy">` : '<div class="nocover"></div>')
+    + `<div class="t">${esc(c.title)}</div>`
+    + `<div class="m">${[c.year, platformNames(c.platforms)].filter(Boolean).map(esc).join(' · ')}</div>`
+    + `<a class="m" href="https://backloggd.com/games/${encodeURIComponent(c.slug)}/" target="_blank" rel="noopener">voir sur Backloggd</a>`
+    + (c.slug === v.suggested ? '<div class="tag">suggestion</div>' : ''),
+    c.slug === v.suggested)).join('');
+  const noneChecked = !(v.candidates ?? []).some((c) => c.slug === v.suggested);
+  return `<div class="pick" data-key="${esc(key)}">
+    <h3>${esc(v.name)}</h3><div class="m muted">Le temps de jeu attend ton choix ; il sera inscrit dès que tu confirmes.</div>
+    <div class="choices">${cards}</div>
+    <div class="row">${choice('__other', 'Autre fiche :', noneChecked)}<input class="slug" placeholder="slug Backloggd, ex. disco-elysium-the-final-cut"></div>
+    <div class="row">${choice('__skip', 'Ne jamais synchroniser ce jeu', false)}</div>
+    <div class="row"><button>Confirmer</button><span class="msg muted"></span></div></div>`;
 }
 
 function wirePicks() {
   for (const box of out.querySelectorAll('.pick')) {
-    const select = box.querySelector('select'), slug = box.querySelector('.slug'), see = box.querySelector('.see');
-    const sync = () => {
-      const v = select.value;
-      slug.hidden = v !== '__other';
-      see.hidden = v.startsWith('__');
-      see.href = `https://backloggd.com/games/${encodeURIComponent(v)}/`;
-    };
-    select.addEventListener('change', sync);
-    sync();
+    const slug = box.querySelector('.slug');
+    slug.addEventListener('focus', () => { box.querySelector('input[value="__other"]').checked = true; });
     box.querySelector('button').addEventListener('click', async () => {
       const msg = box.querySelector('.msg');
+      const picked = box.querySelector('input[type=radio]:checked')?.value;
       const key = box.dataset.key;
       const body = { action: 'map', appid: key.startsWith('ns:') ? key : Number(key) };
-      if (select.value === '__skip') body.skip = true;
-      else body.slug = select.value === '__other' ? slug.value.trim() : select.value;
+      if (picked === '__skip') body.skip = true;
+      else body.slug = picked === '__other' ? slug.value.trim() : picked;
+      if (!body.skip && !body.slug) { msg.textContent = 'Choisis une fiche.'; return; }
+      msg.className = 'msg muted';
       msg.textContent = 'Enregistrement…';
       const res = await post(body);
       if (!res.ok) { msg.className = 'msg err'; msg.textContent = (await res.json().catch(() => ({}))).error ?? `Erreur ${res.status}`; return; }
@@ -95,7 +119,7 @@ async function load() {
     ? `<p>Steam Deck : dernier contact <time>${fmt(s.deck.at)}</time>${s.deck.game ? ` (${esc(s.deck.game)})` : ''}</p>`
     : '<p class="muted">Steam Deck : jamais vu</p>';
   const unmapped = Object.entries(s.unmapped ?? {});
-  if (unmapped.length) html += '<p>Jeux à associer :</p>' + unmapped.map(([key, v]) => pickHtml(key, v)).join('');
+  if (unmapped.length) html += '<h2 style="font-size:1rem">À choisir</h2>' + unmapped.map(([key, v]) => pickHtml(key, v)).join('');
   if (s.pending?.length) html += `<p>En attente :</p>` + list(s.pending.map((d) => `${d.name}, ${d.date}, ${Math.round(d.minutes)} min${d.error ? ` (${d.error})` : ''}`));
 
   html += '<h2 style="font-size:1rem">Journal</h2>';
