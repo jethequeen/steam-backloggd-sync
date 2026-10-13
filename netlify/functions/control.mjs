@@ -50,10 +50,14 @@ export default async (req) => {
                 state.mappings[appid] = null;
             } else {
                 if (!body.slug) return json(400, { error: 'slug or skip required' });
-                const backloggd = await makeBackloggd();
-                const hits = await backloggd.autocomplete(body.slug.replace(/-/g, ' '));
-                const hit = hits.find((h) => h.slug === body.slug);
-                if (!hit) return json(404, { error: `no Backloggd game with slug ${body.slug}`, candidates: hits.slice(0, 5) });
+                // A candidate the page offered (the dropdown) needs no new lookup.
+                let hit = state.unmapped[appid]?.candidates?.find((c) => c.slug === body.slug);
+                if (!hit) {
+                    const backloggd = await makeBackloggd();
+                    const hits = await backloggd.autocomplete(body.slug.replace(/-/g, ' '));
+                    hit = hits.find((h) => h.slug === body.slug);
+                    if (!hit) return json(404, { error: `no Backloggd game with slug ${body.slug}`, candidates: hits.slice(0, 5) });
+                }
                 state.mappings[appid] = hit;
             }
             delete state.unmapped[appid];

@@ -15,6 +15,9 @@
   time { font-variant-numeric: tabular-nums; }
   form { display: flex; gap: .5rem; }
   input { flex: 1; padding: .3rem; }
+  .pick { margin: .4rem 0 .8rem; }
+  .pick select, .pick input { max-width: 100%; padding: .3rem; }
+  .pick .row { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; margin-top: .2rem; }
 </style>
 </head>
 <body>
@@ -34,6 +37,50 @@ const list = (items) => `<ul>${items.map((i) => `<li>${esc(i)}</li>`).join('')}<
 function getToken() { try { return localStorage.getItem('syncToken'); } catch { return null; } }
 function setToken(t) { try { localStorage.setItem('syncToken', t); } catch {} }
 
+// One dropdown per game the site would not guess: Backloggd entries it found, "never sync", or a slug typed by hand.
+function pickHtml(key, v) {
+  const opts = (v.candidates ?? []).map((c) =>
+    `<option value="${esc(c.slug)}">${esc(c.title)}${c.year ? ` (${c.year})` : ''} · ${esc(c.slug)}</option>`).join('');
+  return `<div class="pick" data-key="${esc(key)}"><strong>${esc(v.name)}</strong>
+    <div class="row"><select>${opts}<option value="__other">Autre fiche (slug)…</option><option value="__skip">Ne jamais synchroniser</option></select>
+    <input class="slug" placeholder="slug Backloggd, ex. disco-elysium" hidden>
+    <a class="see" target="_blank" rel="noopener">voir</a>
+    <button>Enregistrer</button></div><div class="msg muted"></div></div>`;
+}
+
+function wirePicks() {
+  for (const box of out.querySelectorAll('.pick')) {
+    const select = box.querySelector('select'), slug = box.querySelector('.slug'), see = box.querySelector('.see');
+    const sync = () => {
+      const v = select.value;
+      slug.hidden = v !== '__other';
+      see.hidden = v.startsWith('__');
+      see.href = `https://backloggd.com/games/${encodeURIComponent(v)}/`;
+    };
+    select.addEventListener('change', sync);
+    sync();
+    box.querySelector('button').addEventListener('click', async () => {
+      const msg = box.querySelector('.msg');
+      const key = box.dataset.key;
+      const body = { action: 'map', appid: key.startsWith('ns:') ? key : Number(key) };
+      if (select.value === '__skip') body.skip = true;
+      else body.slug = select.value === '__other' ? slug.value.trim() : select.value;
+      msg.textContent = 'Enregistrement…';
+      const res = await post(body);
+      if (!res.ok) { msg.className = 'msg err'; msg.textContent = (await res.json().catch(() => ({}))).error ?? `Erreur ${res.status}`; return; }
+      msg.textContent = 'Enregistré. Envoi vers Backloggd…';
+      await post({ action: 'run' });
+      load();
+    });
+  }
+}
+
+const post = (body) => fetch('/api/control', {
+  method: 'POST',
+  headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
+  body: JSON.stringify(body),
+});
+
 async function load() {
   const token = getToken();
   if (!token) { form.hidden = false; out.textContent = ''; return; }
@@ -48,7 +95,7 @@ async function load() {
     ? `<p>Steam Deck : dernier contact <time>${fmt(s.deck.at)}</time>${s.deck.game ? ` (${esc(s.deck.game)})` : ''}</p>`
     : '<p class="muted">Steam Deck : jamais vu</p>';
   const unmapped = Object.entries(s.unmapped ?? {});
-  if (unmapped.length) html += `<p>Jeux à associer :</p>` + list(unmapped.map(([k, v]) => `${k} (${v.name})`));
+  if (unmapped.length) html += '<p>Jeux à associer :</p>' + unmapped.map(([key, v]) => pickHtml(key, v)).join('');
   if (s.pending?.length) html += `<p>En attente :</p>` + list(s.pending.map((d) => `${d.name}, ${d.date}, ${Math.round(d.minutes)} min${d.error ? ` (${d.error})` : ''}`));
 
   html += '<h2 style="font-size:1rem">Journal</h2>';
@@ -59,6 +106,7 @@ async function load() {
       + (e.error ? `<div class="err">${esc(e.error)}</div>` : '') + '</li>').join('') + '</ul>';
   out.className = '';
   out.innerHTML = html;
+  wirePicks();
 }
 
 form.addEventListener('submit', (e) => { e.preventDefault(); setToken(document.getElementById('token').value.trim()); load(); });
