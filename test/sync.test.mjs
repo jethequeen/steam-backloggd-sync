@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { emptyState, localDate, pushToBackloggd, recordPlaytime } from '../lib/sync.mjs';
+import { cleanShortcutName, emptyState, localDate, pushToBackloggd, recordLiveGame, recordPlaytime } from '../lib/sync.mjs';
 import { AuthError, BackloggdClient, SESSION_NOTE } from '../lib/backloggd.mjs';
 
 const tz = 'America/Toronto';
@@ -114,4 +114,46 @@ test('rewrites its own session for the day and skips when unchanged', async () =
     assert.equal(posts[0]['dates[500][0][hours]'], '2');
     assert.equal(posts[0]['dates[500][0][minutes]'], '0');
     assert.equal(posts[0]['dates[500][1][id]'], undefined);
+});
+
+test('a running non-Steam shortcut is credited the time since the last poll', () => {
+    let s = emptyState();
+    s.snapshot = { 1: 600 };
+    s.lastPoll = '2026-10-13T16:00:00Z';
+    const now = at('2026-10-13T16:05:00Z');
+    s = recordLiveGame(s, { gameId: '15374772738578399232', name: 'Chrono Trigger (USA)' }, { now, timeZone: tz }).state;
+    assert.equal(s.days['ns:Chrono Trigger|2026-10-13'].minutes, 5);
+    assert.equal(s.days['ns:Chrono Trigger|2026-10-13'].name, 'Chrono Trigger');
+    assert.equal(s.lastPoll, now.toISOString());
+});
+
+test('owned Steam games are left to the exact playtime counter', () => {
+    const s = emptyState();
+    s.snapshot = { 1145360: 600 };
+    s.lastPoll = '2026-10-13T16:00:00Z';
+    const { gained } = recordLiveGame(s, { gameId: '1145360', name: 'Hades' }, { now: at('2026-10-13T16:05:00Z'), timeZone: tz });
+    assert.deepEqual(gained, []);
+});
+
+test('a long gap between polls is capped instead of counted as play', () => {
+    const s = emptyState();
+    s.snapshot = {};
+    s.lastPoll = '2026-10-13T10:00:00Z';
+    const { gained } = recordLiveGame(s, { gameId: '1', name: 'Zelda' }, { now: at('2026-10-13T16:00:00Z'), timeZone: tz });
+    assert.equal(gained[0].minutes, 10);
+});
+
+test('fractional minutes are rounded and tiny totals wait for more play', async () => {
+    const s = emptyState();
+    s.mappings['ns:Zelda'] = { id: 9, slug: 'zelda' };
+    s.days['ns:Zelda|2026-10-13'] = { appid: 'ns:Zelda', name: 'Zelda', date: '2026-10-13', minutes: 0.4, synced: false };
+    s.days['ns:Zelda|2026-10-12'] = { appid: 'ns:Zelda', name: 'Zelda', date: '2026-10-12', minutes: 12.6, synced: false };
+    const calls = [];
+    await pushToBackloggd(s, { upsertDailySession: async (a) => calls.push(a) });
+    assert.deepEqual(calls, [{ gameId: 9, date: '2026-10-12', minutes: 13 }]);
+    assert.equal(s.days['ns:Zelda|2026-10-13'].synced, false);
+});
+
+test('shortcut names lose region and revision tags', () => {
+    assert.equal(cleanShortcutName('Pokemon - Emerald Version (USA, Europe) [!]'), 'Pokemon - Emerald Version');
 });

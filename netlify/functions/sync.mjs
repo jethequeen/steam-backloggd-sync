@@ -5,4 +5,4 @@ export default async () => {
     console.log(JSON.stringify(result));
 };
 
-export const config = { schedule: '*/15 * * * *' };
+export const config = { schedule: '*/5 * * * *' };
