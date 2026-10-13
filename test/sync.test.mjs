@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { appendLog, cleanShortcutName, emptyState, forAccount, recordReportedPlay, localDate, pushToBackloggd, recordLiveGame, recordPlaytime, reopenChoice, resolveGame } from '../lib/sync.mjs';
+import { appendLog, cleanShortcutName, emptyState, forAccount, markFinishedGames, recordReportedPlay, localDate, pushToBackloggd, recordLiveGame, recordPlaytime, reopenChoice, resolveGame } from '../lib/sync.mjs';
 import { AuthError, BackloggdClient, SESSION_NOTE } from '../lib/backloggd.mjs';
 
 const tz = 'America/Toronto';
@@ -61,7 +61,7 @@ test('auth errors stop the run and keep days pending', async () => {
 });
 
 /** A stand-in for backloggd.com that records what the client posts. */
-function fakeSite(playthroughs) {
+function fakeSite(playthroughs, log = { id: 7, is_playing: true, status: 'played' }) {
     const posts = [];
     const fetchImpl = async (url, init) => {
         const u = new URL(url);
@@ -69,7 +69,7 @@ function fakeSite(playthroughs) {
         if (u.pathname === '/') return html('<meta name="csrf-token" content="tok">');
         if (u.pathname === '/settings/') return html('<a href="/users/sign_out"></a><script>user_id="42"</script>');
         if (u.pathname.startsWith('/log/edit/')) {
-            return Response.json({ game_log: { id: 7, is_playing: true, status: 'played' }, playthroughs });
+            return Response.json({ game_log: log, playthroughs });
         }
         if (u.pathname === '/api/user/42/log/99') {
             assert.equal(init.headers['X-CSRF-Token'], 'tok');
@@ -367,4 +367,50 @@ test('Deck time for a Steam game adds to what Steam counted that day before the 
     assert.equal(recordReportedPlay(s, { appid: 632470, name: 'Disco Elysium', date: '2026-10-13', minutes: 10 }, { now }), 0);
     assert.equal(recordReportedPlay(s, { appid: 632470, name: 'Disco Elysium', date: '2026-10-13', minutes: 25 }, { now }), 15);
     assert.equal(s.days['632470|2026-10-13'].minutes, 39);
+});
+
+test('a game already marked Played gets no Started mark on its first tracked session', async () => {
+    const site = fakeSite([{ id: 500, play_dates: [] }], { id: 7, is_play: true, status: 'completed' });
+    await site.client.upsertDailySession({ gameId: 99, date: '2026-10-13', minutes: 20 });
+    assert.equal(site.posts[0]['dates[500][0][start_date]'], '');
+    assert.equal(site.posts[0]['log[status]'], 'completed');
+});
+
+test('setting a game to Completed or Played marks its last session as the finish, once', async () => {
+    const sessions = [
+        { id: 11, range_start_date: '2026-10-10', range_end_date: '2026-10-11', hours: 1, minutes: 0, start_date: '2026-10-10' },
+        { id: 12, range_start_date: '2026-10-12', range_end_date: '2026-10-13', hours: 0, minutes: 40 },
+    ];
+    let site = fakeSite([{ id: 500, play_dates: sessions }], { id: 7, is_play: true, status: 'completed' });
+    assert.equal(await site.client.markFinished(99), '2026-10-12');
+    assert.equal(site.posts[0]['dates[500][1][finish_date]'], '2026-10-12');
+    assert.equal(site.posts[0]['dates[500][0][finish_date]'], '');
+    assert.equal(site.posts[0]['dates[500][0][start_date]'], '2026-10-10');
+
+    // Still on the Playing shelf (what this tool's own saves look like): nothing to do.
+    site = fakeSite([{ id: 500, play_dates: sessions }]);
+    assert.equal(await site.client.markFinished(99), false);
+    site = fakeSite([{ id: 500, play_dates: sessions }], { id: 7, is_play: true, status: 'shelved' });
+    assert.equal(await site.client.markFinished(99), false);
+    assert.equal(site.posts.length, 0);
+
+    // A finish already there is left alone.
+    site = fakeSite([{ id: 500, play_dates: [{ ...sessions[1], finish_date: '2026-10-12' }] }], { id: 7, is_play: true, status: 'played' });
+    assert.equal(await site.client.markFinished(99), true);
+    assert.equal(site.posts.length, 0);
+});
+
+test('finished games are checked about hourly and then left alone', async () => {
+    const s = emptyState();
+    s.mappings[1] = { id: 5, slug: 'hades', title: 'Hades' };
+    s.mappings[2] = { id: 6, slug: 'celeste', title: 'Celeste' };
+    s.days['1|2026-10-13'] = { appid: 1, date: '2026-10-13', synced: true };
+    s.days['2|2026-10-13'] = { appid: 2, date: '2026-10-13', synced: true };
+    const asked = [];
+    const backloggd = { markFinished: async (id) => { asked.push(id); return id === 5 ? '2026-10-13' : false; } };
+    const now = at('2026-10-13T20:00:00Z');
+    assert.deepEqual(await markFinishedGames(s, backloggd, { now }), [{ game: 'Hades', date: '2026-10-13' }]);
+    assert.deepEqual(await markFinishedGames(s, backloggd, { now: at('2026-10-13T20:30:00Z') }), []);
+    await markFinishedGames(s, backloggd, { now: at('2026-10-13T21:01:00Z') });
+    assert.deepEqual(asked, [5, 6, 6]);
 });
