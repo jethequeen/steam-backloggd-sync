@@ -10,13 +10,22 @@ Une fonction Netlify planifiée (`netlify/functions/sync.mjs`) s'exécute aux 5 
 
 Le premier passage ne fait que mémoriser le point de départ : rien de ton historique n'est importé.
 
-### Jeux non-Steam (Steam ROM Manager, émulateurs)
+### Jeux émulés sur Steam Deck (Steam ROM Manager, EmuDeck)
 
-Steam ne garde pas de temps de jeu consultable pour les raccourcis non-Steam. La fonction regarde donc aussi ton statut « En jeu » (`GetPlayerSummaries`) à chaque passage. Si un raccourci tourne, elle compte le temps écoulé depuis le passage précédent (10 minutes au plus), sous le nom du raccourci. La précision est d'environ 5 minutes par session.
+Steam cache le nom des jeux non-Steam à son API publique : elle voit seulement « In non-Steam game ». Un petit service tourne donc sur le Deck (`deck/`). Aux 30 secondes, il cherche un processus dont la ligne de commande contient un chemin de ROM (EmuDeck les range sous `.../Emulation/roms/`). Il compte le temps pour ce jeu et envoie le total du jour au site. Le temps où le Deck est en veille n'est pas compté.
 
-- Les étiquettes de région ou de version sont retirées du nom avant la recherche sur Backloggd : `Chrono Trigger (USA)` devient `Chrono Trigger`.
-- Ton statut Steam doit être visible : en mode Invisible ou Hors ligne, Steam n'indique pas le jeu en cours.
-- Ces jeux apparaissent dans `unmapped` sous une clé comme `ns:Chrono Trigger`, à utiliser comme `appid` dans l'action `map`.
+- Le nom vient du fichier de la ROM, sans les étiquettes de région ou de version : `SoulCalibur II (USA).rvz` devient `SoulCalibur II`.
+- Si le Deck est hors ligne, les totaux attendent et partent au prochain envoi réussi.
+- Ces jeux apparaissent dans `unmapped` sous une clé comme `ns:SoulCalibur II`, à utiliser comme `appid` dans l'action `map`.
+
+Installation, en mode Bureau, dans Konsole :
+
+```sh
+git clone https://github.com/jethequeen/steam-backloggd-sync.git
+cd steam-backloggd-sync/deck && ./install.sh
+```
+
+Le script demande l'adresse du site et le `SYNC_TOKEN`, puis installe un service qui démarre avec le Deck, en mode Jeu comme en mode Bureau. Pour vérifier ce qu'il détecte pendant qu'un jeu tourne : `python3 ~/.local/bin/backloggd-watch.py --scan`. Journal en direct : `journalctl --user -u backloggd-watch -f`.
 
 > Backloggd n'a pas d'API publique. Ce projet utilise les mêmes endpoints que le site lui-même, tels que documentés par [backloggd-mcp](https://github.com/DenisionSoft/backloggd-mcp). Ils peuvent changer sans préavis.
 
@@ -49,7 +58,10 @@ curl -X POST -H "Authorization: Bearer $SYNC_TOKEN" -d '{"action":"run"}' https:
 # Associer un jeu Steam (appid) à un jeu Backloggd (slug de l'URL), ou l'ignorer
 curl -X POST -H "Authorization: Bearer $SYNC_TOKEN" -d '{"action":"map","appid":1145360,"slug":"hades"}' https://<site>.netlify.app/api/control
 curl -X POST -H "Authorization: Bearer $SYNC_TOKEN" -d '{"action":"map","appid":431960,"skip":true}' https://<site>.netlify.app/api/control
-curl -X POST -H "Authorization: Bearer $SYNC_TOKEN" -d '{"action":"map","appid":"ns:Chrono Trigger","slug":"chrono-trigger"}' https://<site>.netlify.app/api/control
+curl -X POST -H "Authorization: Bearer $SYNC_TOKEN" -d '{"action":"map","appid":"ns:SoulCalibur II","slug":"soulcalibur-ii"}' https://<site>.netlify.app/api/control
+
+# Total du jour pour un jeu émulé (ce que le service du Deck envoie)
+curl -X POST -H "Authorization: Bearer $SYNC_TOKEN" -d '{"action":"play","name":"SoulCalibur II (USA)","date":"2026-10-13","minutes":45}' https://<site>.netlify.app/api/control
 
 # Remplacer le cookie Backloggd sans redéployer
 curl -X POST -H "Authorization: Bearer $SYNC_TOKEN" -d '{"action":"cookie","value":"..."}' https://<site>.netlify.app/api/control
