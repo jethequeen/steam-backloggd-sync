@@ -208,3 +208,32 @@ test('Deck reports set the day total and never shrink it', () => {
     assert.equal(day.minutes, 45);
     assert.equal(day.synced, false);
 });
+
+test('Deck reports carry the ROM system through to the Backloggd write', async () => {
+    const s = emptyState();
+    recordReportedPlay(s, { name: 'SoulCalibur II (USA)', date: '2026-10-13', minutes: 20, system: 'gc' });
+    s.mappings['ns:SoulCalibur II'] = { id: 1565, slug: 'soulcalibur-ii' };
+    const calls = [];
+    await pushToBackloggd(s, { upsertDailySession: async (a) => calls.push(a) });
+    assert.deepEqual(calls, [{ gameId: 1565, date: '2026-10-13', minutes: 20, platform: 21 }]);
+
+    // A system that arrives after the day was synced still gets sent.
+    recordReportedPlay(s, { name: 'SoulCalibur II (USA)', date: '2026-10-13', minutes: 20, system: 'ps2' });
+    assert.equal(s.days['ns:SoulCalibur II|2026-10-13'].synced, false);
+});
+
+test('sets the platform only when the log has none', async () => {
+    const mine = { id: 12, range_start_date: '2026-10-13', range_end_date: '2026-10-14', hours: 0, minutes: 20, note: SESSION_NOTE };
+
+    // Same minutes, no platform yet: the platform alone is worth a write.
+    let site = fakeSite([{ id: 500, play_dates: [mine] }]);
+    assert.deepEqual(await site.client.upsertDailySession({ gameId: 99, date: '2026-10-13', minutes: 20, platform: 21 }), { changed: true, platform: 21 });
+    assert.equal(site.posts[0]['playthroughs[0][played_platform]'], '21');
+
+    // A platform chosen by hand is kept.
+    site = fakeSite([{ id: 500, played_platform: 8, play_dates: [mine] }]);
+    assert.deepEqual(await site.client.upsertDailySession({ gameId: 99, date: '2026-10-13', minutes: 20, platform: 21 }), { changed: false });
+    site.client.lastWrite = -Infinity;
+    await site.client.upsertDailySession({ gameId: 99, date: '2026-10-13', minutes: 30, platform: 21 });
+    assert.equal(site.posts[0]['playthroughs[0][played_platform]'], '8');
+});
