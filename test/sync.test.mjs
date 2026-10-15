@@ -485,7 +485,7 @@ test('finished games are checked about hourly and then left alone', async () => 
 });
 
 /** fakeSite that also applies saves, so a re-read shows what was written. */
-function liveSite(playthroughs, log = { id: 7, is_playing: true, status: 'played' }) {
+function liveSite(playthroughs, log = { id: 7, is_playing: true, status: 'played' }, { deletedField = 'deleted_dates[500][]', failOn = null } = {}) {
     const posts = [];
     const deletes = [];
     const fetchImpl = async (url, init) => {
@@ -496,14 +496,22 @@ function liveSite(playthroughs, log = { id: 7, is_playing: true, status: 'played
         if (u.pathname.startsWith('/log/edit/')) return Response.json({ game_log: log, playthroughs });
         if (u.pathname === '/unlog/') { deletes.push(Object.fromEntries(new URLSearchParams(init.body))); return new Response('{}'); }
         if (u.pathname === '/api/user/42/log/99') {
-            const f = Object.fromEntries(new URLSearchParams(init.body));
+            const params = new URLSearchParams(init.body);
+            const f = Object.fromEntries(params);
             posts.push(f);
             const pt = playthroughs.at(-1);
+            // Like the real site: a session left out of the save stays, unless listed as deleted.
+            if (failOn && params.has(failOn)) return new Response('boom', { status: 500 });
+            const raw = params.getAll(deletedField);
+            const deleted = new Set((deletedField === 'deleted_dates' ? raw.flatMap((v) => { try { return JSON.parse(v); } catch { return []; } }) : raw).map(String));
+            const untouched = (pt.play_dates ?? []).filter((d) => !deleted.has(String(d.id)));
             pt.play_dates = [];
             for (let i = 0; f[`dates[${pt.id}][${i}][id]`] !== undefined; i++) {
                 const g = (k) => f[`dates[${pt.id}][${i}][${k}]`];
                 pt.play_dates.push({ id: Number(g('id')) > 0 ? Number(g('id')) : 1000 + i, range_start_date: g('range_start_date'), range_end_date: g('range_end_date'), hours: g('hours'), minutes: g('minutes'), note: g('note') });
             }
+            const sent = new Set(pt.play_dates.map((d) => String(d.id)));
+            pt.play_dates.push(...untouched.filter((d) => !sent.has(String(d.id))));
             return new Response('{}');
         }
         return new Response('not found', { status: 404 });
@@ -573,4 +581,25 @@ test('deleting a game the owner also logged by hand keeps their entry', async ()
     assert.deepEqual(await deleteGame(s, site.client, 99), { removed: ['2026-10-12'], unlogged: false });
     assert.deepEqual(site.deletes, []);
     assert.equal(site.posts.at(-1)['dates[500][0][id]'], '11');
+});
+
+test('deleted sessions are listed for Backloggd, trying the next form shape when one is ignored', async () => {
+    let site = liveSite([{ id: 500, play_dates: [dayAt(11, '2026-10-13', 30), dayAt(12, '2026-10-14', 20)] }]);
+    await site.client.removeSessions(99, { ids: [12] });
+    assert.equal(site.posts.length, 1);
+    assert.equal(site.client.deleteVariant, 'byPlaythrough');
+
+    // A shape the site rejects with a 500 does not stop the others.
+    site = liveSite([{ id: 500, play_dates: [dayAt(12, '2026-10-14', 20)] }], undefined, { deletedField: 'deleted_dates[]', failOn: 'deleted_dates[500][]' });
+    assert.deepEqual(await site.client.removeSessions(99, { ids: [12] }), { removed: ['2026-10-14'], unlogged: false });
+    assert.equal(site.client.deleteVariant, 'array');
+
+    site = liveSite([{ id: 500, play_dates: [dayAt(11, '2026-10-13', 30), dayAt(12, '2026-10-14', 20)] }], undefined, { deletedField: 'deleted_dates' });
+    assert.deepEqual(await site.client.removeSessions(99, { ids: [12] }), { removed: ['2026-10-14'], unlogged: false });
+    assert.equal(site.posts.length, 2);
+    assert.equal(site.posts[1].deleted_dates, '[12]');
+    assert.equal(site.client.deleteVariant, 'json');
+
+    site = liveSite([{ id: 500, play_dates: [dayAt(12, '2026-10-14', 20)] }], undefined, { deletedField: 'nothing' });
+    await assert.rejects(site.client.removeSessions(99, { ids: [12] }), /gardé/);
 });
