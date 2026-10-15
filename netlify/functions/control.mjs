@@ -117,13 +117,16 @@ export default async (req) => {
             if (body.action === 'restore') {
                 if (!restoreGame(state, gameId)) return json(404, { error: 'not on the deleted list' });
             } else {
+                const backloggd = await makeBackloggd();
+                backloggd.deleteVariant = state.deleteVariant;
                 try {
                     result = body.action === 'deleteGame'
-                        ? await deleteGame(state, await makeBackloggd(), gameId)
-                        : await deleteSession(state, await makeBackloggd(), gameId, body.date);
+                        ? await deleteGame(state, backloggd, gameId)
+                        : await deleteSession(state, backloggd, gameId, body.date);
                 } catch (err) {
                     return json(502, { error: String(err.message ?? err) });
                 }
+                state.deleteVariant = backloggd.deleteVariant;
                 if (result === null) return json(404, { error: 'unknown session' });
             }
             await saveState(state);
