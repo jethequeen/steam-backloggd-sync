@@ -485,7 +485,7 @@ test('finished games are checked about hourly and then left alone', async () => 
 });
 
 /** fakeSite that also applies saves, so a re-read shows what was written. */
-function liveSite(playthroughs, log = { id: 7, is_playing: true, status: 'played' }, { deletedField = 'deleted_dates[]' } = {}) {
+function liveSite(playthroughs, log = { id: 7, is_playing: true, status: 'played' }, { deletedField = 'deleted_dates[500][]', failOn = null } = {}) {
     const posts = [];
     const deletes = [];
     const fetchImpl = async (url, init) => {
@@ -501,6 +501,7 @@ function liveSite(playthroughs, log = { id: 7, is_playing: true, status: 'played
             posts.push(f);
             const pt = playthroughs.at(-1);
             // Like the real site: a session left out of the save stays, unless listed as deleted.
+            if (failOn && params.has(failOn)) return new Response('boom', { status: 500 });
             const raw = params.getAll(deletedField);
             const deleted = new Set((deletedField === 'deleted_dates' ? raw.flatMap((v) => { try { return JSON.parse(v); } catch { return []; } }) : raw).map(String));
             const untouched = (pt.play_dates ?? []).filter((d) => !deleted.has(String(d.id)));
@@ -586,6 +587,11 @@ test('deleted sessions are listed for Backloggd, trying the next form shape when
     let site = liveSite([{ id: 500, play_dates: [dayAt(11, '2026-10-13', 30), dayAt(12, '2026-10-14', 20)] }]);
     await site.client.removeSessions(99, { ids: [12] });
     assert.equal(site.posts.length, 1);
+    assert.equal(site.client.deleteVariant, 'byPlaythrough');
+
+    // A shape the site rejects with a 500 does not stop the others.
+    site = liveSite([{ id: 500, play_dates: [dayAt(12, '2026-10-14', 20)] }], undefined, { deletedField: 'deleted_dates[]', failOn: 'deleted_dates[500][]' });
+    assert.deepEqual(await site.client.removeSessions(99, { ids: [12] }), { removed: ['2026-10-14'], unlogged: false });
     assert.equal(site.client.deleteVariant, 'array');
 
     site = liveSite([{ id: 500, play_dates: [dayAt(11, '2026-10-13', 30), dayAt(12, '2026-10-14', 20)] }], undefined, { deletedField: 'deleted_dates' });
