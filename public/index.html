@@ -3,91 +3,268 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Steam → Backloggd</title>
+<title>Journal de jeu</title>
 <style>
-  :root { color-scheme: light dark; --muted: #888; --err: #d33; --ok: #2a8; }
-  body { font: 14px/1.5 system-ui, sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 16px; }
-  h1 { font-size: 1.2rem; }
+  :root {
+    color-scheme: light dark;
+    --bg: #f4f5f8; --panel: #ffffff; --panel-2: #eceef3; --line: #dfe2e9;
+    --text: #15171c; --text-2: #4f5562; --muted: #7c8291;
+    --accent: #3b6fe0; --accent-soft: #3b6fe022; --ok: #1f9d6b; --warn: #c27a00; --err: #d13a3a;
+    --radius: 14px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0f1115; --panel: #181b22; --panel-2: #20242d; --line: #2a2f3a;
+      --text: #eef0f4; --text-2: #b4bac6; --muted: #848b99; --accent: #6b97ff; --accent-soft: #6b97ff26;
+      --ok: #3ccf91; --warn: #f0b03a; --err: #ff6b6b; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 1040px; margin: 0 auto; padding: 20px 16px 48px; }
+  a { color: inherit; }
+  button { font: inherit; color: inherit; cursor: pointer; border: 1px solid var(--line); background: var(--panel-2); border-radius: 999px; padding: .35rem .9rem; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button:disabled { opacity: .6; cursor: default; }
+  input { font: inherit; color: inherit; background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: .45rem .7rem; }
   .muted { color: var(--muted); }
   .err { color: var(--err); }
-  ul { padding-left: 1.2rem; margin: .2rem 0; }
-  li.run { margin-bottom: .6rem; list-style: none; margin-left: -1.2rem; }
-  time { font-variant-numeric: tabular-nums; }
-  form { display: flex; gap: .5rem; }
-  form[hidden] { display: none; }
-  input { flex: 1; padding: .3rem; }
-  .pick { margin: .6rem 0 1.2rem; padding: .8rem; border: 1px solid color-mix(in srgb, currentColor 20%, transparent); border-radius: 8px; }
-  .pick h3 { font-size: 1rem; margin: 0 0 .2rem; }
-  .choices { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: .6rem; margin: .6rem 0; }
-  .choice { display: block; position: relative; cursor: pointer; border: 2px solid transparent; border-radius: 6px; padding: .3rem; }
-  .choice:has(input:checked) { border-color: var(--ok); }
+  time, .num { font-variant-numeric: tabular-nums; }
+
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; margin-bottom: 18px; }
+  header h1 { font-size: 1.35rem; margin: 0; letter-spacing: -.01em; flex: 1 1 auto; }
+  .pills { display: flex; flex-wrap: wrap; gap: 6px; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-2); background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
+  .dot.ok { background: var(--ok); } .dot.warn { background: var(--warn); } .dot.err { background: var(--err); }
+
+  #login { display: flex; gap: 8px; max-width: 420px; }
+  #login[hidden] { display: none; }
+  #login input { flex: 1; }
+
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: 6px 0 18px; overflow-x: auto; }
+  .tabs button { border: 0; background: none; border-radius: 0; padding: .6rem .9rem; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; }
+  .tabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+  .tabs .count { font-size: 11px; background: var(--warn); color: #000; border-radius: 999px; padding: 0 6px; margin-left: 4px; }
+
+  section { margin-bottom: 26px; }
+  h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 10px; font-weight: 600; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; }
+
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+  .kpi .v { font-size: 1.7rem; font-weight: 650; letter-spacing: -.02em; line-height: 1.1; margin-top: 4px; }
+  .kpi .l { font-size: 12px; color: var(--muted); }
+  .kpi .s { font-size: 12px; color: var(--text-2); margin-top: 2px; }
+
+  .hero { display: grid; grid-template-columns: 120px 1fr; gap: 16px; align-items: center; }
+  .hero .cover { width: 120px; }
+  .hero h3 { margin: 2px 0 6px; font-size: 1.25rem; line-height: 1.2; }
+  .hero .meta { color: var(--text-2); display: flex; flex-wrap: wrap; gap: 6px 14px; }
+
+  .cover { position: relative; aspect-ratio: 3 / 4; border-radius: 10px; overflow: hidden; background: var(--panel-2); display: block; }
+  .cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .cover .ph { position: absolute; inset: 0; display: grid; place-items: center; padding: 10px; text-align: center; font-weight: 600; color: var(--text-2); font-size: 13px; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 16px 12px; }
+  .game .cover { box-shadow: 0 1px 2px #0002; transition: transform .15s; }
+  .game:hover .cover { transform: translateY(-2px); }
+  .game .badge { position: absolute; left: 6px; top: 6px; font-size: 11px; font-weight: 600; background: #000a; color: #fff; border-radius: 6px; padding: 1px 6px; backdrop-filter: blur(4px); }
+  .game .done { left: auto; right: 6px; background: var(--ok); color: #000; }
+  .game .badge:not(.done) { max-width: calc(100% - 40px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .game .time { position: absolute; left: 0; right: 0; bottom: 0; padding: 18px 8px 6px; background: linear-gradient(transparent, #000c); color: #fff; font-weight: 650; font-size: 13px; }
+  .game .t { font-weight: 600; line-height: 1.25; margin-top: 6px; font-size: 13px; }
+  .game .m { font-size: 12px; color: var(--muted); }
+  .game .actions { margin-top: 4px; display: flex; gap: 8px; font-size: 12px; }
+  .game .actions a, .game .actions button { font-size: 12px; padding: 0; border: 0; background: none; color: var(--muted); text-decoration: underline; text-underline-offset: 2px; }
+
+  .chart { position: relative; }
+  .chart { margin-bottom: 22px; }
+  .chart svg { display: block; width: 100%; height: 140px; overflow: visible; }
+  .chart .lbls span { position: absolute; font-size: 11px; color: var(--muted); white-space: nowrap; pointer-events: none; }
+  .chart .bar { fill: var(--accent); }
+  .chart .hit:hover + .bar, .chart .bar.on { fill: color-mix(in srgb, var(--accent) 75%, var(--text)); }
+  .chart .axis { stroke: var(--line); }
+  .tip { position: absolute; pointer-events: none; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; font-size: 12px; box-shadow: 0 6px 20px #0003; min-width: 160px; z-index: 2; }
+  .tip b { display: block; margin-bottom: 2px; }
+  .tip div { display: flex; justify-content: space-between; gap: 12px; color: var(--text-2); }
+
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .rows { display: grid; gap: 10px; }
+  .row-bar .top { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; }
+  .row-bar .track { height: 8px; border-radius: 4px; background: var(--panel-2); margin-top: 4px; overflow: hidden; }
+  .row-bar .fill { height: 100%; border-radius: 4px; background: var(--accent); }
+
+  .filters { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+  .filters button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+  .pick { margin-bottom: 14px; border-color: var(--warn); }
+  .pick h3 { font-size: 1.05rem; margin: 0 0 2px; }
+  .choices { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 12px; margin: 12px 0; }
+  .choice { display: block; position: relative; cursor: pointer; border: 2px solid transparent; border-radius: 12px; padding: 4px; }
+  .choice:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
   .choices .choice input { position: absolute; opacity: 0; }
-  .row .choice { display: inline-flex; gap: .3rem; align-items: center; border: 0; padding: 0; }
-  .row .choice input { flex: none; }
-  .choice img, .choice .nocover { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 4px; background: color-mix(in srgb, currentColor 10%, transparent); display: block; }
-  .choice .t { font-weight: 600; line-height: 1.2; margin-top: .3rem; }
+  .choice .t { font-weight: 600; line-height: 1.2; margin-top: 6px; font-size: 13px; }
   .choice .m { font-size: 12px; color: var(--muted); }
-  .choice .tag { font-size: 11px; color: var(--ok); }
-  .pick .row { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
-  .pick .row input.slug { flex: 1; min-width: 12rem; }
+  .choice .tag { font-size: 11px; color: var(--accent); font-weight: 600; }
+  .pick .line { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
+  .pick .line .choice { display: inline-flex; gap: 6px; align-items: center; border: 0; padding: 0; background: none; }
+  .pick .line input.slug { flex: 1; min-width: 12rem; }
+
+  .log { list-style: none; padding: 0; margin: 0; }
+  .log li { padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .log li:last-child { border-bottom: 0; }
+  .log ul { margin: 4px 0 0; padding-left: 1.1rem; color: var(--text-2); }
+  .empty { text-align: center; padding: 30px 10px; color: var(--muted); }
+
+  @media (max-width: 640px) {
+    .two { grid-template-columns: 1fr; }
+    .hero { grid-template-columns: 90px 1fr; }
+    .hero .cover { width: 90px; }
+    .grid { grid-template-columns: repeat(auto-fill, minmax(105px, 1fr)); }
+    .kpi .v { font-size: 1.4rem; }
+  }
 </style>
 </head>
 <body>
-<h1>Steam → Backloggd</h1>
+<main>
+<header>
+  <h1>Journal de jeu</h1>
+  <div class="pills" id="pills"></div>
+  <button id="sync" hidden>Synchroniser</button>
+</header>
 <form id="login" hidden>
   <input id="token" type="password" placeholder="SYNC_TOKEN" autocomplete="current-password">
-  <button>Voir</button>
+  <button class="primary">Voir</button>
 </form>
+<div id="picks"></div>
+<nav class="tabs" id="tabs" role="tablist" hidden>
+  <button role="tab" data-tab="stats">Aperçu</button>
+  <button role="tab" data-tab="games">Jeux</button>
+  <button role="tab" data-tab="log">Journal</button>
+</nav>
 <div id="out" class="muted">Chargement…</div>
+</main>
 <script>
 const out = document.getElementById('out');
+const picksEl = document.getElementById('picks');
+const pillsEl = document.getElementById('pills');
+const tabsEl = document.getElementById('tabs');
 const form = document.getElementById('login');
+const syncBtn = document.getElementById('sync');
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const fmt = (iso) => iso ? new Date(iso).toLocaleString('fr-CA', { dateStyle: 'short', timeStyle: 'short' }) : 'jamais';
-const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const list = (items) => `<ul>${items.map((i) => `<li>${esc(i)}</li>`).join('')}</ul>`;
+const ago = (iso) => {
+  if (!iso) return 'jamais';
+  const m = Math.round((Date.now() - Date.parse(iso)) / 60000);
+  if (m < 1) return 'à l’instant';
+  if (m < 60) return `il y a ${m} min`;
+  if (m < 48 * 60) return `il y a ${Math.round(m / 60)} h`;
+  return `il y a ${Math.round(m / 1440)} j`;
+};
+const dur = (min) => {
+  min = Math.round(min);
+  if (min < 60) return `${min} min`;
+  const h = Math.floor(min / 60), r = min % 60;
+  return r && h < 10 ? `${h} h ${String(r).padStart(2, '0')}` : `${h} h`;
+};
+const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const daysAgo = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return ymd(d); };
+const dayLabel = (date, opts = { day: 'numeric', month: 'short' }) => new Date(`${date}T12:00:00`).toLocaleDateString('fr-CA', opts);
 
-function getToken() { try { return localStorage.getItem('syncToken'); } catch { return null; } }
-function setToken(t) { try { localStorage.setItem('syncToken', t); } catch {} }
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch {} },
+};
 
-const PLATFORMS = { win: 'PC', mac: 'Mac', linux: 'Linux', switch: 'Switch', ngc: 'GameCube', wii: 'Wii', wiiu: 'Wii U', n64: 'N64', snes: 'SNES', nes: 'NES',
+const PLATFORMS = { win: 'PC', mac: 'Mac', linux: 'Linux', switch: 'Switch', ngc: 'GameCube', wii: 'Wii', wiiu: 'Wii U', n64: 'N64', snes: 'SNES', sfam: 'Super Famicom', nes: 'NES', famicom: 'Famicom',
   gb: 'Game Boy', gbc: 'GBC', gba: 'GBA', nds: 'DS', '3ds': '3DS', ps: 'PS1', ps2: 'PS2', ps3: 'PS3', 'ps4--1': 'PS4', ps5: 'PS5', psp: 'PSP', psvita: 'Vita',
   xbox: 'Xbox', xbox360: 'Xbox 360', xboxone: 'Xbox One', 'series-x-s': 'Xbox Series', arcade: 'Arcade', dc: 'Dreamcast', saturn: 'Saturn',
-  'genesis-slash-megadrive': 'Mega Drive', sms: 'Master System', gamegear: 'Game Gear', ios: 'iOS', android: 'Android', 'switch-2': 'Switch 2' };
-const platformNames = (list) => (list ?? []).map((p) => PLATFORMS[p] ?? p).join(', ');
+  'genesis-slash-megadrive': 'Mega Drive', sms: 'Master System', gamegear: 'Game Gear', ios: 'iOS', android: 'Android', 'switch-2': 'Switch 2', dos: 'DOS' };
+const platformName = (p) => (p ? PLATFORMS[p] ?? p : 'Autre');
+const SOURCES = { steam: 'Steam', deck: 'Steam Deck', phone: 'Téléphone' };
 
-// One card per game the site holds back: every Backloggd entry it could be, the best guess preselected.
+const coverHtml = (url, title) => url
+  ? `<img src="${esc(url)}" alt="" loading="lazy" onerror="this.outerHTML='<div class=ph>'+this.dataset.t+'</div>'" data-t="${esc(esc(title))}">`
+  : `<div class="ph">${esc(title)}</div>`;
+
+let S = null;          // last status from the server
+let tab = store.get('tab') || 'stats';
+let platformFilter = 'all';
+
+const post = (body) => fetch('/api/control', {
+  method: 'POST',
+  headers: { Authorization: `Bearer ${store.get('syncToken')}`, 'Content-Type': 'application/json' },
+  body: JSON.stringify(body),
+});
+
+/* ---------- Data ---------- */
+
+// Every game with its time, platforms and last play, from what was written to Backloggd.
+function buildGames(s) {
+  const games = new Map();
+  const info = (id) => s.games?.[id] ?? Object.values(s.mappings ?? {}).find((m) => m && m.id === id) ?? { id, title: `#${id}` };
+  for (const h of s.history ?? []) {
+    let g = games.get(h.gameId);
+    if (!g) games.set(h.gameId, g = { ...info(h.gameId), minutes: 0, sessions: 0, platforms: new Map(), last: '', first: h.date });
+    g.minutes += h.minutes;
+    g.sessions += 1;
+    g.platforms.set(h.platform, (g.platforms.get(h.platform) ?? 0) + h.minutes);
+    if (h.date > g.last) g.last = h.date;
+    if (h.date < g.first) g.first = h.date;
+  }
+  // Mapped games with nothing written yet still show up, so their entry can be changed.
+  for (const m of Object.values(s.mappings ?? {})) {
+    if (m && !games.has(m.id)) games.set(m.id, { ...info(m.id), minutes: 0, sessions: 0, platforms: new Map(), last: '', first: '' });
+  }
+  for (const g of games.values()) {
+    g.platform = [...g.platforms.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+    g.keys = Object.entries(s.mappings ?? {}).filter(([, m]) => m && m.id === g.id).map(([k]) => k);
+    g.finished = Boolean(s.finished?.[g.id]);
+  }
+  return [...games.values()].sort((a, b) => b.last.localeCompare(a.last) || b.minutes - a.minutes);
+}
+
+const sumSince = (history, from) => history.filter((h) => h.date >= from).reduce((t, h) => t + h.minutes, 0);
+
+/* ---------- Header ---------- */
+
+function renderPills(s) {
+  const pill = (label, iso, okMs) => {
+    const age = iso ? Date.now() - Date.parse(iso) : Infinity;
+    const cls = age < okMs ? 'ok' : age < 24 * 3600e3 ? 'warn' : 'err';
+    return `<span class="pill" title="${esc(fmt(iso))}"><span class="dot ${iso ? cls : ''}"></span>${label} · ${esc(ago(iso))}</span>`;
+  };
+  pillsEl.innerHTML = pill('Synchro', s.lastRun, 15 * 60e3)
+    + pill('Steam Deck', s.deck?.at, 2 * 3600e3)
+    + pill('Téléphone', s.phone?.at, 2 * 3600e3)
+    + (s.lastError ? `<span class="pill err" title="${esc(s.lastError.message)}"><span class="dot err"></span>Erreur</span>` : '');
+}
+
+/* ---------- Choice cards (games held until an entry is picked) ---------- */
+
 function pickHtml(key, v) {
   const name = `pick-${key}`;
   const choice = (value, inner, checked) =>
     `<label class="choice"><input type="radio" name="${esc(name)}" value="${esc(value)}"${checked ? ' checked' : ''}>${inner}</label>`;
   const cards = (v.candidates ?? []).map((c) => choice(c.slug,
-    (c.cover ? `<img src="${esc(c.cover)}" alt="" loading="lazy">` : '<div class="nocover"></div>')
+    `<div class="cover">${coverHtml(c.cover, c.title)}</div>`
     + `<div class="t">${esc(c.title)}</div>`
-    + `<div class="m">${[c.year, platformNames(c.platforms)].filter(Boolean).map(esc).join(' · ')}</div>`
+    + `<div class="m">${[c.year, (c.platforms ?? []).map(platformName).join(', ')].filter(Boolean).map(esc).join(' · ')}</div>`
     + `<a class="m" href="https://backloggd.com/games/${encodeURIComponent(c.slug)}/" target="_blank" rel="noopener">voir sur Backloggd</a>`
-    + (c.slug === v.suggested ? '<div class="tag">suggestion</div>' : ''),
+    + (c.slug === v.suggested ? '<div class="tag">Suggestion</div>' : ''),
     c.slug === v.suggested)).join('');
   const noneChecked = !(v.candidates ?? []).some((c) => c.slug === v.suggested);
-  return `<div class="pick" data-key="${esc(key)}">
-    <h3>${esc(v.name)}</h3><div class="m muted">Le temps de jeu attend ton choix ; il sera inscrit dès que tu confirmes.</div>
+  return `<div class="panel pick" data-key="${esc(key)}">
+    <h3>${esc(v.name)}</h3><div class="muted">Quelle fiche Backloggd ? Le temps de jeu attend ton choix.</div>
     <div class="choices">${cards}</div>
-    <div class="row">${choice('__other', 'Autre fiche :', noneChecked)}<input class="slug" placeholder="slug Backloggd, ex. disco-elysium-the-final-cut"></div>
-    <div class="row">${choice('__skip', 'Ne jamais synchroniser ce jeu', false)}</div>
-    <div class="row"><button>Confirmer</button><span class="msg muted"></span></div></div>`;
+    <div class="line">${choice('__other', 'Autre fiche :', noneChecked)}<input class="slug" placeholder="slug Backloggd, ex. disco-elysium-the-final-cut"></div>
+    <div class="line">${choice('__skip', 'Ne jamais synchroniser ce jeu', false)}</div>
+    <div class="line"><button class="primary">Confirmer</button><span class="msg muted"></span></div></div>`;
 }
 
-function wirePicks() {
-  for (const btn of out.querySelectorAll('.rechoose')) {
-    btn.addEventListener('click', async () => {
-      const key = btn.dataset.key;
-      btn.disabled = true;
-      btn.textContent = 'Recherche des fiches…';
-      const res = await post({ action: 'rechoose', appid: key.startsWith('ns:') ? key : Number(key) });
-      if (!res.ok) { btn.textContent = (await res.json().catch(() => ({}))).error ?? `Erreur ${res.status}`; return; }
-      load();
-    });
-  }
-  for (const box of out.querySelectorAll('.pick')) {
+function renderPicks(s) {
+  const unmapped = Object.entries(s.unmapped ?? {});
+  picksEl.innerHTML = unmapped.length ? '<section><h2>À choisir</h2>' + unmapped.map(([k, v]) => pickHtml(k, v)).join('') + '</section>' : '';
+  for (const box of picksEl.querySelectorAll('.pick')) {
     const slug = box.querySelector('.slug');
     slug.addEventListener('focus', () => { box.querySelector('input[value="__other"]').checked = true; });
     box.querySelector('button').addEventListener('click', async () => {
@@ -109,49 +286,228 @@ function wirePicks() {
   }
 }
 
-const post = (body) => fetch('/api/control', {
-  method: 'POST',
-  headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
-  body: JSON.stringify(body),
-});
+/* ---------- Aperçu ---------- */
+
+function chartHtml(history, games) {
+  const N = 30;
+  const days = Array.from({ length: N }, (_, i) => daysAgo(N - 1 - i));
+  const byDay = new Map(days.map((d) => [d, []]));
+  for (const h of history) byDay.get(h.date)?.push(h);
+  const totals = days.map((d) => byDay.get(d).reduce((t, h) => t + h.minutes, 0));
+  const max = Math.max(60, ...totals);
+  const W = 600, H = 140, gap = 2, bw = W / N - gap;
+  // Gridline at a round number of hours.
+  const stepH = Math.max(1, Math.ceil(max / 60 / 2));
+  const lines = [];
+  for (let h = stepH; h * 60 <= max; h += stepH) lines.push(h);
+  let labels = '';
+  let svg = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Temps de jeu par jour, 30 derniers jours">`;
+  for (const h of lines) {
+    const y = H - (h * 60 / max) * H;
+    svg += `<line class="axis" x1="0" x2="${W}" y1="${y}" y2="${y}" stroke-dasharray="2 4"/>`;
+    labels += `<span style="right:0;top:${(y / H * 140 - 16).toFixed(0)}px">${h} h</span>`;
+  }
+  svg += `<line class="axis" x1="0" x2="${W}" y1="${H}" y2="${H}"/>`;
+  days.forEach((d, i) => {
+    const x = i * (bw + gap);
+    const h = totals[i] ? Math.max(3, (totals[i] / max) * H) : 0;
+    const r = Math.min(4, bw / 2, h);
+    svg += `<rect class="hit" data-i="${i}" x="${x}" y="0" width="${bw + gap}" height="${H}" fill="transparent"/>`;
+    if (h) svg += `<path class="bar" data-i="${i}" d="M${x},${H} V${H - h + r} Q${x},${H - h} ${x + r},${H - h} H${x + bw - r} Q${x + bw},${H - h} ${x + bw},${H - h + r} V${H} Z"/>`;
+    if (i % 7 === 2 || i === N - 1) labels += `<span style="left:${((x + bw / 2) / W * 100).toFixed(2)}%;bottom:-20px;transform:translateX(-${i === N - 1 ? 100 : 50}%)">${i === N - 1 ? 'auj.' : esc(dayLabel(d))}</span>`;
+  });
+  svg += '</svg>';
+  chartData = { days, byDay, totals, games };
+  return `<div class="chart">${svg}<div class="lbls">${labels}</div><div class="tip" hidden></div></div>`;
+}
+
+let chartData = null;
+function wireChart() {
+  const chart = out.querySelector('.chart');
+  if (!chart) return;
+  const tip = chart.querySelector('.tip');
+  const show = (i, ev) => {
+    const { days, byDay, totals, games } = chartData;
+    chart.querySelectorAll('.bar.on').forEach((b) => b.classList.remove('on'));
+    chart.querySelector(`.bar[data-i="${i}"]`)?.classList.add('on');
+    const rows = byDay.get(days[i]).sort((a, b) => b.minutes - a.minutes)
+      .map((h) => `<div><span>${esc(games.get(h.gameId)?.title ?? '?')}</span><span class="num">${dur(h.minutes)}</span></div>`).join('');
+    tip.innerHTML = `<b>${esc(dayLabel(days[i], { weekday: 'long', day: 'numeric', month: 'long' }))} · ${totals[i] ? dur(totals[i]) : 'rien'}</b>${rows}`;
+    tip.hidden = false;
+    const box = chart.getBoundingClientRect();
+    const x = ev.clientX - box.left;
+    tip.style.left = `${Math.min(Math.max(0, x - tip.offsetWidth / 2), box.width - tip.offsetWidth)}px`;
+    tip.style.top = `${-tip.offsetHeight - 6}px`;
+  };
+  const hide = () => { tip.hidden = true; chart.querySelectorAll('.bar.on').forEach((b) => b.classList.remove('on')); };
+  chart.querySelectorAll('.hit').forEach((r) => {
+    r.addEventListener('mousemove', (ev) => show(Number(r.dataset.i), ev));
+    r.addEventListener('click', (ev) => show(Number(r.dataset.i), ev));
+  });
+  chart.addEventListener('mouseleave', hide);
+}
+
+const rowBars = (rows) => {
+  const max = Math.max(1, ...rows.map((r) => r.minutes));
+  return `<div class="rows">${rows.map((r) => `<div class="row-bar"><div class="top"><span>${esc(r.label)}</span><span class="num muted">${dur(r.minutes)}</span></div>`
+    + `<div class="track"><div class="fill" style="width:${(r.minutes / max * 100).toFixed(1)}%"></div></div></div>`).join('')}</div>`;
+};
+
+function gameCard(g, { time = g.minutes } = {}) {
+  const change = g.keys.length ? `<button class="rechoose" data-key="${esc(g.keys[0])}">Changer</button>` : '';
+  return `<div class="game">
+    <a class="cover" href="https://backloggd.com/games/${encodeURIComponent(g.slug)}/" target="_blank" rel="noopener" title="Voir sur Backloggd">
+      ${coverHtml(g.cover, g.title)}
+      ${g.platform ? `<span class="badge">${esc(platformName(g.platform))}</span>` : ''}
+      ${g.finished ? '<span class="badge done" title="Terminé">✓</span>' : ''}
+      ${time ? `<span class="time num">${dur(time)}</span>` : ''}
+    </a>
+    <div class="t">${esc(g.title)}</div>
+    <div class="m">${g.last ? `${g.sessions} session${g.sessions > 1 ? 's' : ''} · ${esc(dayLabel(g.last))}` : 'Pas encore joué'}</div>
+    <div class="actions">${change}</div>
+  </div>`;
+}
+
+function renderStats(s, games) {
+  const history = s.history ?? [];
+  if (!history.length) return '<div class="panel empty">Pas encore de statistiques : elles se remplissent à chaque session envoyée à Backloggd.</div>';
+  const byId = new Map(games.map((g) => [g.id, g]));
+  const today = daysAgo(0);
+  const d7 = sumSince(history, daysAgo(6)), d30 = sumSince(history, daysAgo(29)), total = sumSince(history, '');
+  const prev7 = history.filter((h) => h.date >= daysAgo(13) && h.date < daysAgo(6)).reduce((t, h) => t + h.minutes, 0);
+  const activeDays = new Set(history.filter((h) => h.date >= daysAgo(29)).map((h) => h.date)).size;
+  const since = history.reduce((a, h) => (h.date < a ? h.date : a), today);
+
+  const kpi = (label, v, sub = '') => `<div class="panel kpi"><div class="l">${label}</div><div class="v num">${v}</div>${sub ? `<div class="s">${sub}</div>` : ''}</div>`;
+  const trend = prev7 ? `${d7 >= prev7 ? '▲' : '▼'} ${dur(Math.abs(d7 - prev7))} vs semaine d’avant` : '';
+  let html = `<section class="kpis">
+    ${kpi('Aujourd’hui', dur(sumSince(history, today)))}
+    ${kpi('7 derniers jours', dur(d7), trend)}
+    ${kpi('30 derniers jours', dur(d30), `${activeDays} jour${activeDays > 1 ? 's' : ''} de jeu`)}
+    ${kpi('Total suivi', dur(total), `depuis le ${esc(dayLabel(since, { day: 'numeric', month: 'long' }))}`)}
+  </section>`;
+
+  const current = games.find((g) => g.last);
+  if (current) {
+    const week = history.filter((h) => h.gameId === current.id && h.date >= daysAgo(6)).reduce((t, h) => t + h.minutes, 0);
+    html += `<section><h2>Dernier jeu</h2><div class="panel hero">
+      <a class="cover" href="https://backloggd.com/games/${encodeURIComponent(current.slug)}/" target="_blank" rel="noopener">${coverHtml(current.cover, current.title)}</a>
+      <div><div class="muted">${esc(platformName(current.platform))}${current.finished ? ' · Terminé' : ''}</div>
+      <h3>${esc(current.title)}</h3>
+      <div class="meta"><span><b class="num">${dur(current.minutes)}</b> au total</span><span><b class="num">${dur(week)}</b> cette semaine</span>
+      <span>${current.sessions} session${current.sessions > 1 ? 's' : ''}</span><span>dernière : ${esc(dayLabel(current.last, { weekday: 'long', day: 'numeric', month: 'long' }))}</span></div></div>
+    </div></section>`;
+  }
+
+  html += `<section><h2>Temps de jeu, 30 derniers jours</h2><div class="panel">${chartHtml(history, byId)}</div></section>`;
+
+  const top = games.map((g) => ({ g, m: history.filter((h) => h.gameId === g.id && h.date >= daysAgo(29)).reduce((t, h) => t + h.minutes, 0) }))
+    .filter((x) => x.m > 0).sort((a, b) => b.m - a.m).slice(0, 6);
+  if (top.length) html += `<section><h2>Les plus joués, 30 jours</h2><div class="grid">${top.map(({ g, m }) => gameCard(g, { time: m })).join('')}</div></section>`;
+
+  const group = (key) => {
+    const m = new Map();
+    for (const h of history) for (const k of [].concat(key(h))) m.set(k, (m.get(k) ?? 0) + h.minutes / [].concat(key(h)).length);
+    return [...m.entries()].map(([k, minutes]) => ({ k, minutes })).sort((a, b) => b.minutes - a.minutes);
+  };
+  const platforms = group((h) => h.platform).map((r) => ({ label: platformName(r.k), minutes: r.minutes }));
+  const sources = group((h) => (h.sources?.length ? h.sources : ['steam'])).map((r) => ({ label: SOURCES[r.k] ?? r.k, minutes: r.minutes }));
+  const weekdays = Array.from({ length: 7 }, (_, i) => ({ label: new Date(2024, 0, 1 + i).toLocaleDateString('fr-CA', { weekday: 'long' }), minutes: 0 }));
+  for (const h of history) weekdays[(new Date(`${h.date}T12:00:00`).getDay() + 6) % 7].minutes += h.minutes;
+  html += `<section class="two">
+    <div><h2>Par plateforme</h2><div class="panel">${rowBars(platforms)}</div></div>
+    <div><h2>Par appareil</h2><div class="panel">${rowBars(sources)}</div>
+      <h2 style="margin-top:16px">Par jour de la semaine</h2><div class="panel">${rowBars(weekdays)}</div></div>
+  </section>`;
+  return html;
+}
+
+/* ---------- Jeux ---------- */
+
+function renderGames(games) {
+  if (!games.length) return '<div class="panel empty">Aucun jeu encore.</div>';
+  const counts = new Map();
+  for (const g of games) counts.set(g.platform, (counts.get(g.platform) ?? 0) + 1);
+  const chips = [['all', `Tous · ${games.length}`], ...[...counts.entries()].sort((a, b) => b[1] - a[1]).map(([p, n]) => [p ?? '', `${platformName(p)} · ${n}`])];
+  if (!chips.some(([p]) => p === platformFilter)) platformFilter = 'all';
+  const shown = platformFilter === 'all' ? games : games.filter((g) => (g.platform ?? '') === platformFilter);
+  return `<div class="filters">${chips.map(([p, label]) => `<button data-platform="${esc(p)}" aria-pressed="${p === platformFilter}">${esc(label)}</button>`).join('')}</div>
+    <div class="grid">${shown.map((g) => gameCard(g)).join('')}</div>`;
+}
+
+/* ---------- Journal ---------- */
+
+function renderLog(s) {
+  const list = (items, prefix) => (items ?? []).map((i) => `<li>${prefix}${esc(i)}</li>`).join('');
+  let html = `<section class="kpis">
+    <div class="panel kpi"><div class="l">Dernier passage</div><div class="s"><time>${esc(fmt(s.lastRun))}</time></div></div>
+    <div class="panel kpi"><div class="l">Steam Deck</div><div class="s">${s.deck ? `<time>${esc(fmt(s.deck.at))}</time>${s.deck.game ? `<br>${esc(s.deck.game)}` : ''}` : 'jamais vu'}</div></div>
+    <div class="panel kpi"><div class="l">Téléphone</div><div class="s">${s.phone ? `<time>${esc(fmt(s.phone.at))}</time>${s.phone.game ? `<br>${esc(s.phone.game)}` : ''}` : 'jamais vu'}</div></div>
+  </section>`;
+  if (s.lastError) html += `<section class="panel err">Erreur : ${esc(s.lastError.message)}</section>`;
+  if (s.pending?.length) html += `<section><h2>En attente d’envoi</h2><div class="panel"><ul class="log">${s.pending.map((d) =>
+    `<li>${esc(d.name)} · ${esc(d.date)} · ${dur(d.minutes)}${d.error ? ` <span class="err">(${esc(d.error)})</span>` : ''}</li>`).join('')}</ul></div></section>`;
+  html += '<section><h2>Passages récents</h2><div class="panel">';
+  if (!s.log?.length) html += '<div class="empty">Rien encore.</div>';
+  else html += '<ul class="log">' + s.log.map((e) => `<li><time class="muted">${esc(fmt(e.at))}</time><ul>`
+    + list(e.played, 'Joué : ') + list(e.pushed, 'Inscrit : ') + list(e.finished, 'Terminé : ')
+    + (e.error ? `<li class="err">${esc(e.error)}</li>` : '') + '</ul></li>').join('') + '</ul>';
+  return html + '</div></section>';
+}
+
+/* ---------- Page ---------- */
+
+function render() {
+  const s = S;
+  const games = buildGames(s);
+  for (const b of tabsEl.querySelectorAll('button')) b.setAttribute('aria-selected', String(b.dataset.tab === tab));
+  out.className = '';
+  out.innerHTML = tab === 'games' ? renderGames(games) : tab === 'log' ? renderLog(s) : renderStats(s, games);
+  wireChart();
+  for (const b of out.querySelectorAll('.filters button')) b.addEventListener('click', () => { platformFilter = b.dataset.platform; render(); });
+  for (const btn of out.querySelectorAll('.rechoose')) {
+    btn.addEventListener('click', async () => {
+      const key = btn.dataset.key;
+      btn.disabled = true;
+      btn.textContent = 'Recherche…';
+      const res = await post({ action: 'rechoose', appid: key.startsWith('ns:') ? key : Number(key) });
+      if (!res.ok) { btn.textContent = (await res.json().catch(() => ({}))).error ?? `Erreur ${res.status}`; return; }
+      await load();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+  }
+}
 
 async function load() {
-  const token = getToken();
+  const token = store.get('syncToken');
   if (!token) { form.hidden = false; out.textContent = ''; return; }
   const res = await fetch('/api/control', { headers: { Authorization: `Bearer ${token}` } });
   if (res.status === 401) { form.hidden = false; out.innerHTML = '<span class="err">Token refusé.</span>'; return; }
-  const s = await res.json();
+  S = await res.json();
   form.hidden = true;
-
-  let html = `<p>Dernier passage : <time>${fmt(s.lastRun)}</time></p>`;
-  if (s.lastError) html += `<p class="err">Erreur : ${esc(s.lastError.message)}</p>`;
-  html += s.deck
-    ? `<p>Steam Deck : dernier contact <time>${fmt(s.deck.at)}</time>${s.deck.game ? ` (${esc(s.deck.game)})` : ''}</p>`
-    : '<p class="muted">Steam Deck : jamais vu</p>';
-  html += s.phone
-    ? `<p>Téléphone : dernier contact <time>${fmt(s.phone.at)}</time>${s.phone.game ? ` (${esc(s.phone.game)})` : ''}</p>`
-    : '<p class="muted">Téléphone : jamais vu</p>';
-  const unmapped = Object.entries(s.unmapped ?? {});
-  if (unmapped.length) html += '<h2 style="font-size:1rem">À choisir</h2>' + unmapped.map(([key, v]) => pickHtml(key, v)).join('');
-  const mapped = Object.entries(s.mappings ?? {}).filter(([, m]) => m);
-  if (mapped.length) html += '<details><summary>Fiches associées</summary><ul>' + mapped.map(([key, m]) => `<li>`
-      + `<a href="https://backloggd.com/games/${encodeURIComponent(m.slug)}/" target="_blank" rel="noopener">${esc(m.title)}</a>`
-      + `${m.year ? ` (${esc(m.year)})` : ''} <button class="rechoose" data-key="${esc(key)}">Changer</button></li>`).join('') + '</ul></details>';
-  if (s.pending?.length) html += `<p>En attente :</p>` + list(s.pending.map((d) => `${d.name}, ${d.date}, ${Math.round(d.minutes)} min${d.error ? ` (${d.error})` : ''}`));
-
-  html += '<h2 style="font-size:1rem">Journal</h2>';
-  if (!s.log?.length) html += '<p class="muted">Rien encore.</p>';
-  else html += '<ul>' + s.log.map((e) => `<li class="run"><time>${fmt(e.at)}</time>`
-      + (e.played ? list(e.played.map((p) => `Joué : ${p}`)) : '')
-      + (e.pushed ? list(e.pushed.map((p) => `Inscrit : ${p}`)) : '')
-      + (e.finished ? list(e.finished.map((p) => `Terminé : ${p}`)) : '')
-      + (e.error ? `<div class="err">${esc(e.error)}</div>` : '') + '</li>').join('') + '</ul>';
-  out.className = '';
-  out.innerHTML = html;
-  wirePicks();
+  tabsEl.hidden = false;
+  syncBtn.hidden = false;
+  renderPills(S);
+  renderPicks(S);
+  render();
 }
 
-form.addEventListener('submit', (e) => { e.preventDefault(); setToken(document.getElementById('token').value.trim()); load(); });
+tabsEl.addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-tab]');
+  if (!b || !S) return;
+  tab = b.dataset.tab;
+  store.set('tab', tab);
+  render();
+});
+syncBtn.addEventListener('click', async () => {
+  syncBtn.disabled = true;
+  syncBtn.textContent = 'Synchronisation…';
+  await post({ action: 'run' }).catch(() => {});
+  await load().catch(() => {});
+  syncBtn.disabled = false;
+  syncBtn.textContent = 'Synchroniser';
+});
+form.addEventListener('submit', (e) => { e.preventDefault(); store.set('syncToken', document.getElementById('token').value.trim()); load(); });
 load().catch((err) => { out.innerHTML = `<span class="err">${esc(err.message)}</span>`; });
 </script>
 </body>

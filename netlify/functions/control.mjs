@@ -37,6 +37,9 @@ export default async (req) => {
             pending: Object.values(state.days).filter((d) => !d.synced),
             unmapped: state.unmapped,
             mappings: state.mappings,
+            history: Object.values(state.history ?? {}).map(({ sessionId, ...h }) => h),
+            games: state.games ?? {},
+            finished: state.finished ?? {},
             deck: await loadDeckSeen(),
             phone: await loadDeckSeen('phone'),
         });
