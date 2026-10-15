@@ -259,6 +259,12 @@ def main():
     state['dirty'] = [k for k in state['dirty'] if k.split('|', 1)[0] >= cutoff]
     if state['dirty']:
         flush(state, site, token)
+    else:
+        # Nothing played: still tell the site this run happened, so the page shows the phone is alive.
+        try:
+            post(site, token, {'action': 'ping', 'device': DEVICE})
+        except Exception as err:
+            print(f'ping failed: {err}', file=sys.stderr)
     save_state(state)
 
 
