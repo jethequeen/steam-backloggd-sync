@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { appendLog, cleanShortcutName, emptyState, fillCovers, forAccount, seedHistory, markFinishedGames, recordReportedPlay, localDate, pushToBackloggd, recordLiveGame, recordPlaytime, reopenChoice, resolveGame } from '../lib/sync.mjs';
+import { appendLog, cleanShortcutName, emptyState, fillCovers, forAccount, seedHistory, deleteGame, deleteSession, restoreGame, markFinishedGames, recordReportedPlay, localDate, pushToBackloggd, recordLiveGame, recordPlaytime, reopenChoice, resolveGame } from '../lib/sync.mjs';
 import { AuthError, BackloggdClient, LEGACY_SESSION_NOTE } from '../lib/backloggd.mjs';
 
 const tz = 'America/Toronto';
@@ -482,4 +482,95 @@ test('finished games are checked about hourly and then left alone', async () => 
     assert.deepEqual(await markFinishedGames(s, backloggd, { now: at('2026-10-13T20:30:00Z') }), []);
     await markFinishedGames(s, backloggd, { now: at('2026-10-13T21:01:00Z') });
     assert.deepEqual(asked, [5, 6, 6]);
+});
+
+/** fakeSite that also applies saves, so a re-read shows what was written. */
+function liveSite(playthroughs, log = { id: 7, is_playing: true, status: 'played' }) {
+    const posts = [];
+    const deletes = [];
+    const fetchImpl = async (url, init) => {
+        const u = new URL(url);
+        const html = (body) => new Response(body, { status: 200, headers: { 'content-type': 'text/html' } });
+        if (u.pathname === '/') return html('<meta name="csrf-token" content="tok">');
+        if (u.pathname === '/settings/') return html('<a href="/users/sign_out"></a><script>user_id="42"</script>');
+        if (u.pathname.startsWith('/log/edit/')) return Response.json({ game_log: log, playthroughs });
+        if (u.pathname === '/unlog/') { deletes.push(Object.fromEntries(new URLSearchParams(init.body))); return new Response('{}'); }
+        if (u.pathname === '/api/user/42/log/99') {
+            const f = Object.fromEntries(new URLSearchParams(init.body));
+            posts.push(f);
+            const pt = playthroughs.at(-1);
+            pt.play_dates = [];
+            for (let i = 0; f[`dates[${pt.id}][${i}][id]`] !== undefined; i++) {
+                const g = (k) => f[`dates[${pt.id}][${i}][${k}]`];
+                pt.play_dates.push({ id: Number(g('id')) > 0 ? Number(g('id')) : 1000 + i, range_start_date: g('range_start_date'), range_end_date: g('range_end_date'), hours: g('hours'), minutes: g('minutes'), note: g('note') });
+            }
+            return new Response('{}');
+        }
+        return new Response('not found', { status: 404 });
+    };
+    const client = new BackloggdClient({ sessionCookie: 'abc', fetchImpl });
+    client.lastWrite = -Infinity;
+    return { posts, deletes, client };
+}
+
+const dayAt = (id, date, minutes, note = null) => ({ id, range_start_date: date, range_end_date: date, hours: 0, minutes, note });
+
+test('a new session\'s id is read back after it is created', async () => {
+    const site = liveSite([{ id: 500, play_dates: [dayAt(11, '2026-10-01', 30)] }]);
+    const res = await site.client.upsertDailySession({ gameId: 99, date: '2026-10-13', minutes: 20 });
+    assert.equal(res.sessionId, 1001);
+});
+
+test('deleting a session removes only that one on Backloggd, and its time is not sent again', async () => {
+    const site = liveSite([{ id: 500, play_dates: [dayAt(11, '2026-10-13', 30), dayAt(12, '2026-10-13', 20)] }]);
+    site.client.WRITE_GAP_MS = 0;
+    const s = emptyState();
+    s.mappings[5] = { id: 99, slug: 'hades', title: 'Hades' };
+    s.days['5|2026-10-13'] = { appid: 5, name: 'Hades', date: '2026-10-13', minutes: 20, synced: true };
+    s.history = { '99|2026-10-13': { gameId: 99, date: '2026-10-13', minutes: 20, sessionId: 12 } };
+    assert.deepEqual(await deleteSession(s, site.client, 99, '2026-10-13'), { removed: ['2026-10-13'], unlogged: false });
+    assert.deepEqual(site.posts.at(-1)['dates[500][0][id]'], '11');
+    assert.equal(site.posts.at(-1)['dates[500][1][id]'], undefined);
+    assert.equal(s.history['99|2026-10-13'], undefined);
+
+    // Same day, more play: only the new 15 minutes become a session.
+    const calls = [];
+    s.days['5|2026-10-13'].minutes = 35;
+    s.days['5|2026-10-13'].synced = false;
+    await pushToBackloggd(s, { upsertDailySession: async (a) => { calls.push(a); return { sessionId: 13 }; } });
+    assert.deepEqual(calls, [{ gameId: 99, date: '2026-10-13', minutes: 15, platform: 6 }]);
+});
+
+test('deleting a game logged by mistake removes it from Backloggd and blocks it until restored', async () => {
+    const site = liveSite([{ id: 500, play_dates: [dayAt(12, '2026-10-12', 20), dayAt(13, '2026-10-13', 5, LEGACY_SESSION_NOTE)] }], { id: 7, is_playing: true, status: 'played' });
+    const s = emptyState();
+    s.mappings['ns:switch:Oops'] = { id: 99, slug: 'oops', title: 'Oops' };
+    s.history = { '99|2026-10-12': { gameId: 99, date: '2026-10-12', minutes: 20, sessionId: 12 } };
+    const res = await deleteGame(s, site.client, 99);
+    assert.deepEqual(res, { removed: ['2026-10-12', '2026-10-13'], unlogged: true });
+    assert.deepEqual(site.deletes, [{ game_id: '99', log_id: '7' }]);
+    assert.equal(s.blocked[99].title, 'Oops');
+    assert.deepEqual(s.history, {});
+
+    // The phone keeps reporting it: nothing is sent.
+    s.days['ns:switch:Oops|2026-10-14|phone'] = { appid: 'ns:switch:Oops', name: 'Oops', date: '2026-10-14', minutes: 30, synced: false, system: 'switch' };
+    const calls = [];
+    await pushToBackloggd(s, { upsertDailySession: async (a) => calls.push(a) });
+    assert.deepEqual(calls, []);
+    assert.equal(s.days['ns:switch:Oops|2026-10-14|phone'].synced, true);
+
+    assert.equal(restoreGame(s, 99), true);
+    s.days['ns:switch:Oops|2026-10-15|phone'] = { appid: 'ns:switch:Oops', name: 'Oops', date: '2026-10-15', minutes: 10, synced: false, system: 'switch' };
+    await pushToBackloggd(s, { upsertDailySession: async (a) => calls.push(a) });
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].date, '2026-10-15');
+});
+
+test('deleting a game the owner also logged by hand keeps their entry', async () => {
+    const site = liveSite([{ id: 500, play_dates: [dayAt(11, '2026-09-01', 60, 'manual'), dayAt(12, '2026-10-12', 20)] }]);
+    const s = emptyState();
+    s.history = { '99|2026-10-12': { gameId: 99, date: '2026-10-12', minutes: 20, sessionId: 12 } };
+    assert.deepEqual(await deleteGame(s, site.client, 99), { removed: ['2026-10-12'], unlogged: false });
+    assert.deepEqual(site.deletes, []);
+    assert.equal(site.posts.at(-1)['dates[500][0][id]'], '11');
 });

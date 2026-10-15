@@ -112,6 +112,16 @@
   .log { list-style: none; padding: 0; margin: 0; }
   .log li { padding: 10px 0; border-bottom: 1px solid var(--line); }
   .log li:last-child { border-bottom: 0; }
+  .log li.removed { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+  .log li.removed button { flex: none; font-size: 12px; padding: .2rem .7rem; }
+  button.danger { background: var(--err); border-color: var(--err); color: #fff; }
+  .small { font-size: 12px; }
+  dialog { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; width: min(520px, calc(100vw - 32px)); max-height: 85vh; }
+  dialog::backdrop { background: #0008; }
+  dialog .line { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 8px; }
+  dialog .msg { margin-top: 8px; }
+  .dlg-head { display: grid; grid-template-columns: 64px 1fr; gap: 12px; align-items: center; margin-bottom: 8px; }
+  .dlg-head h3 { margin: 0; font-size: 1.1rem; }
   .log ul { margin: 4px 0 0; padding-left: 1.1rem; color: var(--text-2); }
   .empty { text-align: center; padding: 30px 10px; color: var(--muted); }
 
@@ -143,6 +153,7 @@
 </nav>
 <div id="out" class="muted">Chargement…</div>
 </main>
+<dialog id="dlg"></dialog>
 <script>
 const out = document.getElementById('out');
 const picksEl = document.getElementById('picks');
@@ -150,6 +161,7 @@ const pillsEl = document.getElementById('pills');
 const tabsEl = document.getElementById('tabs');
 const form = document.getElementById('login');
 const syncBtn = document.getElementById('sync');
+const dlg = document.getElementById('dlg');
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const fmt = (iso) => iso ? new Date(iso).toLocaleString('fr-CA', { dateStyle: 'short', timeStyle: 'short' }) : 'jamais';
 const ago = (iso) => {
@@ -213,7 +225,7 @@ function buildGames(s) {
   }
   // Mapped games with nothing written yet still show up, so their entry can be changed.
   for (const m of Object.values(s.mappings ?? {})) {
-    if (m && !games.has(m.id)) games.set(m.id, { ...info(m.id), minutes: 0, sessions: 0, platforms: new Map(), last: '', first: '' });
+    if (m && !games.has(m.id) && !s.blocked?.[m.id]) games.set(m.id, { ...info(m.id), minutes: 0, sessions: 0, platforms: new Map(), last: '', first: '' });
   }
   for (const g of games.values()) {
     g.platform = [...g.platforms.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
@@ -354,7 +366,8 @@ const rowBars = (rows) => {
 };
 
 function gameCard(g, { time = g.minutes } = {}) {
-  const change = g.keys.length ? `<button class="rechoose" data-key="${esc(g.keys[0])}">Changer</button>` : '';
+  const change = `<button class="details" data-id="${g.id}">Sessions</button>`
+    + (g.keys.length ? `<button class="rechoose" data-key="${esc(g.keys[0])}">Changer</button>` : '');
   return `<div class="game">
     <a class="cover" href="https://backloggd.com/games/${encodeURIComponent(g.slug)}/" target="_blank" rel="noopener" title="Voir sur Backloggd">
       ${coverHtml(g.cover, g.title)}
@@ -424,15 +437,65 @@ function renderStats(s, games) {
 
 /* ---------- Jeux ---------- */
 
+function renderRemoved(s) {
+  const blocked = Object.values(s.blocked ?? {});
+  const skipped = s.skipped ?? [];
+  if (!blocked.length && !skipped.length) return '';
+  const label = (key, name) => name ?? (String(key).startsWith('ns:') ? String(key).split(':').pop() : `Steam ${key}`);
+  return `<section style="margin-top:28px"><h2>Jeux supprimés</h2><div class="panel"><div class="muted" style="margin-bottom:8px">Rien n’est envoyé à Backloggd pour ces jeux, même si Steam, le Deck ou le téléphone les voient encore.</div><ul class="log">`
+    + blocked.map((b) => `<li class="removed"><span>${esc(b.title)} <span class="muted">· supprimé le ${esc(dayLabel(b.at.slice(0, 10)))}</span></span><button class="restore" data-id="${b.id}">Rétablir</button></li>`).join('')
+    + skipped.map((k) => `<li class="removed"><span>${esc(label(k.appid, k.name))} <span class="muted">· jamais synchronisé</span></span><button class="unskip" data-key="${esc(k.appid)}">Rétablir</button></li>`).join('')
+    + '</ul></div></section>';
+}
+
+function sessionsHtml(g) {
+  const rows = (S.history ?? []).filter((h) => h.gameId === g.id).sort((a, b) => b.date.localeCompare(a.date));
+  return `<div class="dlg-head"><div class="cover">${coverHtml(g.cover, g.title)}</div><div><h3>${esc(g.title)}</h3>
+      <div class="muted">${dur(g.minutes)} · ${rows.length} session${rows.length > 1 ? 's' : ''}</div></div></div>
+    <div class="line"><button class="danger del-game">Supprimer le jeu</button><button class="close">Fermer</button></div>
+    <div class="muted small">Supprimer le jeu retire ses sessions de Backloggd, et le jeu lui-même s’il n’y a rien d’autre à toi dessus (note, critique, autres sessions). Il ira dans « Jeux supprimés ».</div>
+    <div class="msg"></div>
+    ${rows.length ? `<ul class="log">${rows.map((h) => `<li class="removed"><span>${esc(dayLabel(h.date, { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' }))}
+      <span class="muted">· ${dur(h.minutes)}${h.platform ? ` · ${esc(platformName(h.platform))}` : ''}</span></span>
+      <button class="del-session" data-date="${esc(h.date)}" title="Supprimer cette session">Supprimer</button></li>`).join('')}</ul>`
+      : '<div class="empty">Aucune session envoyée par le site.</div>'}
+`;
+}
+
+function openSessions(id) {
+  const g = buildGames(S).find((x) => x.id === id);
+  if (!g) return;
+  dlg.innerHTML = sessionsHtml(g);
+  const msg = dlg.querySelector('.msg');
+  const act = async (body, btn, confirmText) => {
+    if (!confirm(confirmText)) return;
+    btn.disabled = true;
+    msg.className = 'msg muted';
+    msg.textContent = 'Suppression sur Backloggd…';
+    const res = await post(body);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { btn.disabled = false; msg.className = 'msg err'; msg.textContent = data.error ?? `Erreur ${res.status}`; return; }
+    await load();
+    if (body.action === 'deleteGame') { dlg.close(); return; }
+    openSessions(id);
+  };
+  dlg.querySelector('.close').addEventListener('click', () => dlg.close());
+  dlg.querySelector('.del-game').addEventListener('click', (e) => act({ action: 'deleteGame', gameId: id }, e.target,
+    `Supprimer « ${g.title} » ? Ses sessions seront retirées de Backloggd et plus rien ne sera envoyé pour ce jeu.`));
+  for (const b of dlg.querySelectorAll('.del-session')) b.addEventListener('click', () => act({ action: 'deleteSession', gameId: id, date: b.dataset.date }, b,
+    `Supprimer la session du ${dayLabel(b.dataset.date, { day: 'numeric', month: 'long' })} de Backloggd ?`));
+  if (!dlg.open) dlg.showModal();
+}
+
 function renderGames(games) {
-  if (!games.length) return '<div class="panel empty">Aucun jeu encore.</div>';
+  if (!games.length) return '<div class="panel empty">Aucun jeu encore.</div>' + renderRemoved(S);
   const counts = new Map();
   for (const g of games) counts.set(g.platform, (counts.get(g.platform) ?? 0) + 1);
   const chips = [['all', `Tous · ${games.length}`], ...[...counts.entries()].sort((a, b) => b[1] - a[1]).map(([p, n]) => [p ?? '', `${platformName(p)} · ${n}`])];
   if (!chips.some(([p]) => p === platformFilter)) platformFilter = 'all';
   const shown = platformFilter === 'all' ? games : games.filter((g) => (g.platform ?? '') === platformFilter);
   return `<div class="filters">${chips.map(([p, label]) => `<button data-platform="${esc(p)}" aria-pressed="${p === platformFilter}">${esc(label)}</button>`).join('')}</div>
-    <div class="grid">${shown.map((g) => gameCard(g)).join('')}</div>`;
+    <div class="grid">${shown.map((g) => gameCard(g)).join('')}</div>` + renderRemoved(S);
 }
 
 /* ---------- Journal ---------- */
@@ -465,6 +528,18 @@ function render() {
   out.innerHTML = tab === 'games' ? renderGames(games) : tab === 'log' ? renderLog(s) : renderStats(s, games);
   wireChart();
   for (const b of out.querySelectorAll('.filters button')) b.addEventListener('click', () => { platformFilter = b.dataset.platform; render(); });
+  for (const btn of out.querySelectorAll('.details')) btn.addEventListener('click', () => openSessions(Number(btn.dataset.id)));
+  for (const btn of out.querySelectorAll('.restore, .unskip')) {
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      const key = btn.dataset.key;
+      const body = btn.classList.contains('restore') ? { action: 'restore', gameId: Number(btn.dataset.id) }
+        : { action: 'unskip', appid: key.startsWith('ns:') ? key : Number(key) };
+      const res = await post(body);
+      if (!res.ok) { btn.textContent = (await res.json().catch(() => ({}))).error ?? `Erreur ${res.status}`; return; }
+      load();
+    });
+  }
   for (const btn of out.querySelectorAll('.rechoose')) {
     btn.addEventListener('click', async () => {
       const key = btn.dataset.key;
