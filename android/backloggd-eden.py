@@ -13,8 +13,7 @@ Steam Deck watcher does. Games are named from titledb (looked up once per new ga
 If rish fails (Shizuku stops after every reboot), a Termux notification says so.
 
 Config: ~/.config/backloggd-eden.env with SITE_URL and SYNC_TOKEN.
-  --init yes|no  first run: "yes" sends the history Eden already holds (dated today),
-                 "no" starts counting from now
+The first run only records Eden's totals: time played before the install is never sent.
   --scan         print Eden's totals with game names and exit
   --test         check that rish and the site both answer
 """
@@ -38,8 +37,6 @@ ENV_FILE = HOME / '.config/backloggd-eden.env'
 STATE_FILE = HOME / '.local/state/backloggd-eden.json'
 NOTIFY_ID = 'backloggd-eden'
 KEEP_DAYS = 7
-# The site caps a day at 24 h unless the report says it carries Eden's earlier history.
-DAY_MINUTES = 1440
 DEVICE = 'phone'
 SYSTEM = 'switch'
 
@@ -206,8 +203,6 @@ def flush(state, site, token):
             continue
         payload = {'action': 'play', 'name': state['names'][tid], 'date': day, 'minutes': round(minutes, 1),
                    'system': SYSTEM, 'device': DEVICE}
-        if minutes > DAY_MINUTES:
-            payload['backfill'] = True
         try:
             post(site, token, payload)
             print(f'{day} {state["names"][tid]} : {round(minutes)} min', flush=True)
@@ -253,10 +248,9 @@ def main():
     clear_notification()
 
     state = load_state()
-    if '--init' in sys.argv or state is None:
-        backfill = '--init' in sys.argv and sys.argv[sys.argv.index('--init') + 1:][:1] == ['yes']
-        # Without --init (state file lost), never resend history that may already be on Backloggd.
-        state = {'known': {} if backfill else dict(totals), 'days': {}, 'dirty': [], 'names': (state or {}).get('names', {})}
+    if state is None:
+        # Counting starts now: the totals Eden already holds are the baseline, never sent.
+        state = {'known': dict(totals), 'days': {}, 'dirty': [], 'names': {}}
 
     today = date.today().isoformat()
     credit(state, totals, today)

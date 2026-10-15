@@ -37,7 +37,7 @@ Eden garde un total cumulé par jeu dans `Android/data/dev.eden.eden_emulator/fi
 
 - Si `rish` échoue (Shizuku s'arrête à chaque redémarrage), une notification Termux le dit ; elle disparaît au premier passage réussi.
 - Le même jeu joué le même jour sur le Deck et le téléphone donne une seule session, la somme des deux.
-- À l'installation, le script demande s'il faut envoyer le temps déjà dans Eden. Oui : tout l'historique part en une session datée du jour de l'installation. Non : le compte commence à partir de maintenant.
+- Le compte commence à l'installation : le temps déjà dans Eden n'est jamais envoyé.
 - MacroDroid peut aussi lancer `~/.local/bin/backloggd-eden` à la fermeture d'Eden (plugin Termux:Tasker), pour un envoi immédiat.
 
 Il faut l'app Termux:API et `rish` déjà configuré dans Termux. Installation et mise à jour, dans Termux :

@@ -17,8 +17,7 @@ const json = (status, body) => Response.json(body, { status });
  *   POST {"action":"play","appid":632470,"name":"Disco Elysium","date":"...","minutes":30}
  *                                            same for a Steam game the Deck saw running
  *   POST {"action":"play","name":"The Great Ace Attorney Chronicles","date":"...","minutes":30,"system":"switch","device":"phone"}
- *                                            same from the Android phone (android/); "backfill":true lifts the
- *                                            one-day cap for the history Eden already held at install
+ *                                            same from the Android phone (android/)
  *   POST {"action":"rechoose","appid":632470}  forget a game's entry and offer the choice again
  *   POST {"action":"inspect","gameId":1565}  raw Backloggd log for one game (debugging)
  *   POST {"action":"ping"}                   connection test from the watcher's --test
@@ -86,11 +85,9 @@ export default async (req) => {
             const { name, date } = body;
             const minutes = Number(body.minutes);
             const device = typeof body.device === 'string' && /^[a-z0-9_-]{1,20}$/.test(body.device) ? body.device : undefined;
-            // The phone's first report can carry Eden's whole history, dated the install day.
-            const maxMinutes = body.backfill === true && device ? 100_000 : 1440;
             if (typeof name !== 'string' || !name.trim() || name.length > 200) return json(400, { error: 'name required' });
             if (!/^\d{4}-\d{2}-\d{2}$/.test(date ?? '')) return json(400, { error: 'date must be YYYY-MM-DD' });
-            if (!Number.isFinite(minutes) || minutes < 0 || minutes > maxMinutes) return json(400, { error: `minutes must be 0-${maxMinutes}` });
+            if (!Number.isFinite(minutes) || minutes < 0 || minutes > 1440) return json(400, { error: 'minutes must be 0-1440' });
             const system = typeof body.system === 'string' && /^[a-z0-9_-]{1,20}$/.test(body.system) ? body.system : undefined;
             const appid = Number.isInteger(body.appid) && body.appid > 0 && body.appid < 2 ** 31 ? body.appid : undefined;
             await saveReport({ name: name.trim(), date, minutes, system: appid ? undefined : system, appid, device: appid ? undefined : device });

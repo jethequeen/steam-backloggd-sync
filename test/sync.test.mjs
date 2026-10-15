@@ -237,10 +237,6 @@ test('Phone and Deck days for the same game add up into one Backloggd session', 
     assert.ok(Object.values(s.days).every((d) => d.synced));
 });
 
-test('A phone backfill larger than a day is kept whole', () => {
-    const s = emptyState();
-    assert.equal(recordReportedPlay(s, { name: 'Ace Attorney', date: '2026-10-15', minutes: 3092, system: 'switch', device: 'phone' }), 3092);
-});
 
 const soulcalibur = () => ({
     autocomplete: async () => [

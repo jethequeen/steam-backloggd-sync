@@ -35,11 +35,8 @@ if [ ! -f "$ENV_FILE" ]; then
     umask 022
 fi
 
-if [ ! -f "$STATE_FILE" ]; then
-    read -rp "Envoyer à Backloggd le temps déjà dans Eden (daté d'aujourd'hui) ? [o/n] " answer < /dev/tty
-    case "$answer" in [oOyY]*) init=yes ;; *) init=no ;; esac
-    python "$BIN/backloggd-eden.py" --init "$init" || true
-fi
+# First run: records Eden's current totals as the starting point (earlier time is not sent).
+[ -f "$STATE_FILE" ] || python "$BIN/backloggd-eden.py" || true
 
 # Every 15 minutes (Android's shortest period), kept across reboots.
 termux-job-scheduler --job-id 4242 --period-ms 900000 --persisted true --script "$BIN/backloggd-eden" >/dev/null
