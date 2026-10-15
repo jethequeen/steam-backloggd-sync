@@ -72,12 +72,15 @@ def read_totals():
     # missing file (Eden never saved a time) apart from rish failing.
     cmd = f'echo RISH_OK; [ -f {PLAYTIME_FILE} ] && base64 {PLAYTIME_FILE}'
     try:
-        out = subprocess.run([rish_path(), '-c', cmd], capture_output=True, text=True, timeout=30)
+        # Without a terminal (the scheduled job), rish sends the output on stderr: read both.
+        out = subprocess.run([rish_path(), '-c', cmd], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                             text=True, timeout=30)
     except (OSError, subprocess.TimeoutExpired) as err:
         raise RishError(str(err)) from err
     if 'RISH_OK' not in out.stdout:
-        raise RishError((out.stderr or out.stdout).strip()[:200] or f'code {out.returncode}')
-    data = base64.b64decode(''.join(out.stdout.split('RISH_OK', 1)[1].split()))
+        raise RishError(out.stdout.strip()[:200] or f'code {out.returncode}')
+    lines = out.stdout.split('RISH_OK', 1)[1].split()
+    data = base64.b64decode(''.join(l for l in lines if re.fullmatch(r'[A-Za-z0-9+/=]+', l)))
     return parse(data)
 
 
