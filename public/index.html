@@ -128,6 +128,9 @@ async function load() {
   html += s.deck
     ? `<p>Steam Deck : dernier contact <time>${fmt(s.deck.at)}</time>${s.deck.game ? ` (${esc(s.deck.game)})` : ''}</p>`
     : '<p class="muted">Steam Deck : jamais vu</p>';
+  html += s.phone
+    ? `<p>Téléphone : dernier contact <time>${fmt(s.phone.at)}</time>${s.phone.game ? ` (${esc(s.phone.game)})` : ''}</p>`
+    : '<p class="muted">Téléphone : jamais vu</p>';
   const unmapped = Object.entries(s.unmapped ?? {});
   if (unmapped.length) html += '<h2 style="font-size:1rem">À choisir</h2>' + unmapped.map(([key, v]) => pickHtml(key, v)).join('');
   const mapped = Object.entries(s.mappings ?? {}).filter(([, m]) => m);

@@ -222,6 +222,26 @@ test('Deck reports carry the ROM system through to the Backloggd write', async (
     assert.equal(s.days['ns:ps2:SoulCalibur II|2026-10-13'].minutes, 5);
 });
 
+test('Phone and Deck days for the same game add up into one Backloggd session', async () => {
+    const s = emptyState();
+    recordReportedPlay(s, { name: 'Ace Attorney', date: '2026-10-15', minutes: 30, system: 'switch' });
+    assert.equal(recordReportedPlay(s, { name: 'Ace Attorney', date: '2026-10-15', minutes: 20, system: 'switch', device: 'phone' }), 20);
+    // Each device's total only moves its own day.
+    assert.equal(recordReportedPlay(s, { name: 'Ace Attorney', date: '2026-10-15', minutes: 25, system: 'switch', device: 'phone' }), 5);
+    assert.equal(s.days['ns:switch:Ace Attorney|2026-10-15'].minutes, 30);
+    s.mappings['ns:switch:Ace Attorney'] = { id: 42, slug: 'ace' };
+    const calls = [];
+    const pushed = await pushToBackloggd(s, { upsertDailySession: async (a) => calls.push(a) });
+    assert.deepEqual(calls, [{ gameId: 42, date: '2026-10-15', minutes: 55, platform: 130 }]);
+    assert.equal(pushed.length, 1);
+    assert.ok(Object.values(s.days).every((d) => d.synced));
+});
+
+test('A phone backfill larger than a day is kept whole', () => {
+    const s = emptyState();
+    assert.equal(recordReportedPlay(s, { name: 'Ace Attorney', date: '2026-10-15', minutes: 3092, system: 'switch', device: 'phone' }), 3092);
+});
+
 const soulcalibur = () => ({
     autocomplete: async () => [
         { id: 1565, slug: 'soulcalibur-ii', title: 'SoulCalibur II' },
