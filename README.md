@@ -31,6 +31,23 @@ cd steam-backloggd-sync/deck && ./install.sh
 
 Le script demande l'adresse du site et le `SYNC_TOKEN`, puis installe un service qui démarre avec le Deck, en mode Jeu comme en mode Bureau. À la fin, il affiche le résultat d'un test de connexion au site (OK ou la raison de l'échec) et l'état du service. Pour mettre à jour : `cd ~/steam-backloggd-sync && git pull && bash deck/install.sh`. Pour vérifier ce qu'il détecte pendant qu'un jeu tourne : `python3 ~/.local/bin/backloggd-watch.py --scan`. La page du site indique aussi quand le Deck l'a contacté pour la dernière fois. Journal en direct : `journalctl --user -u backloggd-watch -f`.
 
+### Jeux Switch sur téléphone Android (Eden)
+
+Eden garde un total cumulé par jeu dans `Android/data/dev.eden.eden_emulator/files/play_time/playtime.bin` (entrées de 16 octets : Title ID puis secondes, en uint64 little-endian). Ce dossier n'est lisible qu'avec Shizuku, donc un script Termux (`android/`) le lit avec `rish`. Aux 15 minutes (`termux-job-scheduler`), il compare les totaux avec ceux du passage précédent, ajoute la différence au jour même et envoie le total du jour au site, comme le Deck. Les noms viennent de [titledb](https://github.com/blawar/titledb) (une recherche par nouveau jeu), la plateforme est Switch.
+
+- Si `rish` échoue (Shizuku s'arrête à chaque redémarrage), une notification Termux le dit ; elle disparaît au premier passage réussi.
+- Le même jeu joué le même jour sur le Deck et le téléphone donne une seule session, la somme des deux.
+- Le compte commence à l'installation : le temps déjà dans Eden n'est jamais envoyé.
+- MacroDroid peut aussi lancer `~/.local/bin/backloggd-eden` à la fermeture d'Eden (plugin Termux:Tasker), pour un envoi immédiat.
+
+Il faut l'app Termux:API et `rish` déjà configuré dans Termux. Installation et mise à jour, dans Termux :
+
+```sh
+curl -sL https://raw.githubusercontent.com/jethequeen/steam-backloggd-sync/main/android/install.sh | bash
+```
+
+Vérifier : `python ~/.local/bin/backloggd-eden.py --test` (Shizuku et site) ou `--scan` (totaux d'Eden avec les noms). Journal : `~/.local/state/backloggd-eden.log`. La page du site indique quand le téléphone l'a contacté pour la dernière fois.
+
 > Backloggd n'a pas d'API publique. Ce projet utilise les mêmes endpoints que le site lui-même, tels que documentés par [backloggd-mcp](https://github.com/DenisionSoft/backloggd-mcp). Ils peuvent changer sans préavis.
 
 ## Mise en place

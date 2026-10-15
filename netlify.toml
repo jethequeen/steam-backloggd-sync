@@ -1,6 +1,8 @@
 [build]
   functions = "netlify/functions"
   publish = "public"
+  # Changes only to the Deck or phone scripts (fetched from GitHub) or the README need no deploy.
+  ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- . ':(exclude)android' ':(exclude)deck' ':(exclude)README.md'"
 
 [functions]
   node_bundler = "esbuild"
