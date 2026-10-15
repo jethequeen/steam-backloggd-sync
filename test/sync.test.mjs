@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { appendLog, cleanShortcutName, emptyState, forAccount, markFinishedGames, recordReportedPlay, localDate, pushToBackloggd, recordLiveGame, recordPlaytime, reopenChoice, resolveGame } from '../lib/sync.mjs';
-import { AuthError, BackloggdClient, SESSION_NOTE } from '../lib/backloggd.mjs';
+import { appendLog, cleanShortcutName, emptyState, fillCovers, forAccount, seedHistory, markFinishedGames, recordReportedPlay, localDate, pushToBackloggd, recordLiveGame, recordPlaytime, reopenChoice, resolveGame } from '../lib/sync.mjs';
+import { AuthError, BackloggdClient, LEGACY_SESSION_NOTE } from '../lib/backloggd.mjs';
 
 const tz = 'America/Toronto';
 const at = (iso) => new Date(iso);
@@ -81,7 +81,7 @@ function fakeSite(playthroughs, log = { id: 7, is_playing: true, status: 'played
     return { posts, client: new BackloggdClient({ sessionCookie: 'abc', fetchImpl }) };
 }
 
-test('adds a new Steam session while re-sending existing ones', async () => {
+test('adds a new session without a note while re-sending existing ones', async () => {
     const existing = { id: 11, range_start_date: '2026-10-01', range_end_date: '2026-10-02', hours: 1, minutes: 0, note: 'manual' };
     const { posts, client } = fakeSite([{ id: 500, title: 'Log', play_dates: [existing] }]);
     client.lastWrite = -Infinity;
@@ -97,23 +97,76 @@ test('adds a new Steam session while re-sending existing ones', async () => {
     assert.equal(f['dates[500][1][range_end_date]'], '2026-10-14');
     assert.equal(f['dates[500][1][hours]'], '1');
     assert.equal(f['dates[500][1][minutes]'], '35');
-    assert.equal(f['dates[500][1][note]'], SESSION_NOTE);
+    assert.equal(f['dates[500][1][note]'], '');
     assert.equal(f['log[is_playing]'], 'true');
 });
 
 test('rewrites its own session for the day and skips when unchanged', async () => {
-    const mine = { id: 12, range_start_date: '2026-10-13', range_end_date: '2026-10-14', hours: 1, minutes: 35, note: SESSION_NOTE };
+    const mine = { id: 12, range_start_date: '2026-10-13', range_end_date: '2026-10-14', hours: 1, minutes: 35, note: null };
     const { posts, client } = fakeSite([{ id: 500, play_dates: [mine] }]);
 
-    assert.deepEqual(await client.upsertDailySession({ gameId: 99, date: '2026-10-13', minutes: 95 }), { changed: false });
+    assert.deepEqual(await client.upsertDailySession({ gameId: 99, date: '2026-10-13', minutes: 95, sessionId: 12 }), { changed: false, sessionId: 12 });
     assert.equal(posts.length, 0);
 
     client.lastWrite = -Infinity;
-    await client.upsertDailySession({ gameId: 99, date: '2026-10-13', minutes: 120 });
+    await client.upsertDailySession({ gameId: 99, date: '2026-10-13', minutes: 120, sessionId: 12 });
     assert.equal(posts[0]['dates[500][0][id]'], '12');
     assert.equal(posts[0]['dates[500][0][hours]'], '2');
     assert.equal(posts[0]['dates[500][0][minutes]'], '0');
     assert.equal(posts[0]['dates[500][1][id]'], undefined);
+});
+
+test('an old session marked "Steam" is still found, and loses the note', async () => {
+    const old = { id: 12, range_start_date: '2026-10-13', range_end_date: '2026-10-14', hours: 1, minutes: 35, note: LEGACY_SESSION_NOTE };
+    const { posts, client } = fakeSite([{ id: 500, play_dates: [old] }]);
+    assert.deepEqual(await client.upsertDailySession({ gameId: 99, date: '2026-10-13', minutes: 95 }), { changed: true, sessionId: 12 });
+    assert.equal(posts[0]['dates[500][0][id]'], '12');
+    assert.equal(posts[0]['dates[500][0][note]'], '');
+    assert.equal(posts[0]['dates[500][1][id]'], undefined);
+});
+
+test('a session written before is found without its id only when it is the day\'s only one without a note', async () => {
+    const ours = { id: 12, range_start_date: '2026-10-13', range_end_date: '2026-10-14', hours: 0, minutes: 20 };
+    let site = fakeSite([{ id: 500, play_dates: [ours] }]);
+    assert.deepEqual(await site.client.upsertDailySession({ gameId: 99, date: '2026-10-13', minutes: 20, pushedBefore: true }), { changed: false, sessionId: 12 });
+
+    // Never written by the sync: a session already there (entered by hand) is left alone.
+    site = fakeSite([{ id: 500, play_dates: [ours] }]);
+    await site.client.upsertDailySession({ gameId: 99, date: '2026-10-13', minutes: 30 });
+    assert.equal(site.posts[0]['dates[500][0][minutes]'], '20');
+    assert.equal(site.posts[0]['dates[500][1][id]'], '-1');
+});
+
+test('pushes remember the session id and keep a history for the statistics', async () => {
+    const s = emptyState();
+    s.mappings[632470] = { id: 1, slug: 'disco-elysium', title: 'Disco Elysium', cover: 'https://x/c.jpg' };
+    s.days['632470|2026-10-13'] = { appid: 632470, name: 'Disco Elysium', date: '2026-10-13', minutes: 5, synced: false };
+    s.days['ns:switch:Disco Elysium|2026-10-13|phone'] = { appid: 'ns:switch:Disco Elysium', name: 'Disco Elysium', date: '2026-10-13', minutes: 3, synced: false, system: 'switch', device: 'phone' };
+    s.mappings['ns:switch:Disco Elysium'] = s.mappings[632470];
+    const calls = [];
+    const backloggd = { upsertDailySession: async (a) => { calls.push(a); return { changed: true, sessionId: 77 }; } };
+    await pushToBackloggd(s, backloggd);
+    assert.deepEqual(s.history['1|2026-10-13'], { gameId: 1, date: '2026-10-13', minutes: 8, platform: 'win', sources: ['steam', 'phone'], sessionId: 77 });
+    assert.deepEqual(s.games[1], { id: 1, slug: 'disco-elysium', title: 'Disco Elysium', year: null, cover: 'https://x/c.jpg' });
+
+    s.days['632470|2026-10-13'].minutes = 10;
+    s.days['632470|2026-10-13'].synced = false;
+    await pushToBackloggd(s, backloggd);
+    assert.equal(calls[1].sessionId, 77);
+    assert.equal(calls[1].pushedBefore, true);
+    assert.equal(s.history['1|2026-10-13'].minutes, 13);
+});
+
+test('the history is seeded once from days already written, and missing covers are fetched', async () => {
+    const s = emptyState();
+    s.mappings[5] = { id: 9, slug: 'hades', title: 'Hades' };
+    s.days['5|2026-10-12'] = { appid: 5, name: 'Hades', date: '2026-10-12', minutes: 40, synced: true };
+    s.days['5|2026-10-13'] = { appid: 5, name: 'Hades', date: '2026-10-13', minutes: 10, synced: false };
+    seedHistory(s);
+    assert.deepEqual(Object.keys(s.history), ['9|2026-10-12']);
+    seedHistory(s);
+    await fillCovers(s, { gameDetails: async () => ({ cover: 'https://x/h.jpg', platforms: ['win'] }) });
+    assert.equal(s.games[9].cover, 'https://x/h.jpg');
 });
 
 test('a running game missing from the library (family sharing) is credited the time since the last poll', () => {
@@ -289,18 +342,18 @@ test('reads release platforms, cover and editions from Backloggd pages', async (
 });
 
 test('sets the platform only when the log has none', async () => {
-    const mine = { id: 12, range_start_date: '2026-10-13', range_end_date: '2026-10-14', hours: 0, minutes: 20, note: SESSION_NOTE };
+    const mine = { id: 12, range_start_date: '2026-10-13', range_end_date: '2026-10-14', hours: 0, minutes: 20, note: null };
 
     // Same minutes, no platform yet: the platform alone is worth a write.
     let site = fakeSite([{ id: 500, play_dates: [mine] }]);
-    assert.deepEqual(await site.client.upsertDailySession({ gameId: 99, date: '2026-10-13', minutes: 20, platform: 21 }), { changed: true, platform: 21 });
+    assert.deepEqual(await site.client.upsertDailySession({ gameId: 99, date: '2026-10-13', minutes: 20, platform: 21, sessionId: 12 }), { changed: true, platform: 21, sessionId: 12 });
     assert.equal(site.posts[0]['playthroughs[0][played_platform]'], '21');
 
     // A platform chosen by hand is kept.
     site = fakeSite([{ id: 500, played_platform: 8, play_dates: [mine] }]);
-    assert.deepEqual(await site.client.upsertDailySession({ gameId: 99, date: '2026-10-13', minutes: 20, platform: 21 }), { changed: false });
+    assert.deepEqual(await site.client.upsertDailySession({ gameId: 99, date: '2026-10-13', minutes: 20, platform: 21, sessionId: 12 }), { changed: false, sessionId: 12 });
     site.client.lastWrite = -Infinity;
-    await site.client.upsertDailySession({ gameId: 99, date: '2026-10-13', minutes: 30, platform: 21 });
+    await site.client.upsertDailySession({ gameId: 99, date: '2026-10-13', minutes: 30, platform: 21, sessionId: 12 });
     assert.equal(site.posts[0]['playthroughs[0][played_platform]'], '8');
 });
 

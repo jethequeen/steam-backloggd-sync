@@ -6,7 +6,7 @@ Une fonction Netlify planifiée (`netlify/functions/sync.mjs`) s'exécute aux 5 
 
 1. Elle lit le temps de jeu total de chaque jeu via l'API Web Steam (`GetOwnedGames`).
 2. Elle compare avec la lecture précédente, gardée dans Netlify Blobs, et additionne la différence au total du jour pour chaque jeu.
-3. Elle écrit ce total dans une session datée du jour, avec la note `Steam`, sur la dernière partie (playthrough) du jeu dans Backloggd. Si le jeu n'a pas encore de partie, il est ajouté à « Playing » et une partie est créée.
+3. Elle écrit ce total dans une session datée du jour, sans note, sur la dernière partie (playthrough) du jeu dans Backloggd. Si le jeu n'a pas encore de partie, il est ajouté à « Playing » et une partie est créée. Le site retient l'identifiant de chaque session écrite pour la retrouver ; les anciennes sessions notées `Steam` perdent la note à leur prochaine mise à jour.
 
 Le premier passage ne fait que mémoriser le point de départ : rien de ton historique n'est importé.
 
@@ -20,7 +20,8 @@ Steam cache le nom des jeux non-Steam à son API publique : elle voit seulement 
 - Les jeux Steam lancés sur le Deck sont suivis de la même façon (processus `SteamLaunch AppId=…`). Le temps tombe ainsi sur le bon jour même si le jeu reste ouvert pendant une mise en veille. Pendant 24 h après un rapport du Deck pour un jeu, le temps de jeu que Steam rapporte pour ce jeu est ignoré, pour ne pas le compter deux fois.
 - La première session d'un jeu est marquée « Started », sauf si le jeu était déjà marqué Played, Completed, etc. sur Backloggd.
 - Quand tu mets un jeu à Played, Completed ou Retired sur Backloggd, sa dernière session est marquée comme fin (« Finished ») au passage suivant, dans l'heure. Shelved et Abandoned ne marquent rien.
-- Sur la page, « Fiches associées » permet de changer la fiche d'un jeu déjà associé : le jeu repasse dans « À choisir ». Les sessions déjà inscrites restent sur l'ancienne fiche.
+- La page a trois onglets : Aperçu (statistiques, jeu en cours, plus joués, par plateforme et appareil), Jeux (jaquettes, filtrables par plateforme) et Journal (passages, envois en attente, dernier contact du Deck et du téléphone). Les statistiques couvrent ce qui a été envoyé à Backloggd depuis que l'historique existe, plus les deux semaines précédentes.
+- Sur la page, « Changer » sous une jaquette (onglet Jeux) permet de changer la fiche d'un jeu déjà associé : le jeu repasse dans « À choisir ». Les sessions déjà inscrites restent sur l'ancienne fiche.
 
 Installation, en mode Bureau, dans Konsole :
 
