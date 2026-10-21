@@ -269,8 +269,7 @@ function pickHtml(key, v) {
     <h3>${esc(v.name)}</h3><div class="muted">Quelle fiche Backloggd ? Le temps de jeu attend ton choix.</div>
     <div class="choices">${cards}</div>
     <div class="line">${choice('__other', 'Autre fiche :', noneChecked)}<input class="slug" placeholder="slug Backloggd, ex. disco-elysium-the-final-cut"></div>
-    <div class="line">${choice('__skip', 'Ne jamais synchroniser ce jeu', false)}</div>
-    <div class="line"><button class="primary">Confirmer</button><span class="msg muted"></span></div></div>`;
+    <div class="line"><button class="primary confirm">Confirmer</button><button class="danger dismiss">Supprimer</button><span class="msg muted"></span></div></div>`;
 }
 
 function renderPicks(s) {
@@ -279,22 +278,28 @@ function renderPicks(s) {
   for (const box of picksEl.querySelectorAll('.pick')) {
     const slug = box.querySelector('.slug');
     slug.addEventListener('focus', () => { box.querySelector('input[value="__other"]').checked = true; });
-    box.querySelector('button').addEventListener('click', async () => {
+    const save = async (dismiss) => {
       const msg = box.querySelector('.msg');
       const picked = box.querySelector('input[type=radio]:checked')?.value;
       const key = box.dataset.key;
       const body = { action: 'map', appid: key.startsWith('ns:') ? key : Number(key) };
-      if (picked === '__skip') body.skip = true;
-      else body.slug = picked === '__other' ? slug.value.trim() : picked;
+      // Deleting a game still waiting for its entry: its held time is dropped and it goes to
+      // « Jeux supprimés », where « Rétablir » offers the choice again for later play.
+      if (dismiss) {
+        if (!confirm(`Supprimer « ${box.querySelector('h3').textContent} » ? Le temps en attente ne sera pas envoyé et le jeu ira dans « Jeux supprimés ».`)) return;
+        body.skip = true;
+      } else body.slug = picked === '__other' ? slug.value.trim() : picked;
       if (!body.skip && !body.slug) { msg.textContent = 'Choisis une fiche.'; return; }
       msg.className = 'msg muted';
       msg.textContent = 'Enregistrement…';
       const res = await post(body);
       if (!res.ok) { msg.className = 'msg err'; msg.textContent = (await res.json().catch(() => ({}))).error ?? `Erreur ${res.status}`; return; }
-      msg.textContent = 'Enregistré. Envoi vers Backloggd…';
+      msg.textContent = body.skip ? 'Supprimé.' : 'Enregistré. Envoi vers Backloggd…';
       await post({ action: 'run' });
       load();
-    });
+    };
+    box.querySelector('.confirm').addEventListener('click', () => save(false));
+    box.querySelector('.dismiss').addEventListener('click', () => save(true));
   }
 }
 
@@ -444,7 +449,7 @@ function renderRemoved(s) {
   const label = (key, name) => name ?? (String(key).startsWith('ns:') ? String(key).split(':').pop() : `Steam ${key}`);
   return `<section style="margin-top:28px"><h2>Jeux supprimés</h2><div class="panel"><div class="muted" style="margin-bottom:8px">Rien n’est envoyé à Backloggd pour ces jeux, même si Steam, le Deck ou le téléphone les voient encore.</div><ul class="log">`
     + blocked.map((b) => `<li class="removed"><span>${esc(b.title)} <span class="muted">· supprimé le ${esc(dayLabel(b.at.slice(0, 10)))}</span></span><button class="restore" data-id="${b.id}">Rétablir</button></li>`).join('')
-    + skipped.map((k) => `<li class="removed"><span>${esc(label(k.appid, k.name))} <span class="muted">· jamais synchronisé</span></span><button class="unskip" data-key="${esc(k.appid)}">Rétablir</button></li>`).join('')
+    + skipped.map((k) => `<li class="removed"><span>${esc(label(k.appid, k.name))} <span class="muted">· supprimé avant d’être associé</span></span><button class="unskip" data-key="${esc(k.appid)}">Rétablir</button></li>`).join('')
     + '</ul></div></section>';
 }
 
