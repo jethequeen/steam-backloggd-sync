@@ -202,7 +202,7 @@ test('fractional minutes are rounded and tiny totals wait for more play', async 
     s.days['ns:Zelda|2026-10-13'] = { appid: 'ns:Zelda', name: 'Zelda', date: '2026-10-13', minutes: 0.4, synced: false };
     s.days['ns:Zelda|2026-10-12'] = { appid: 'ns:Zelda', name: 'Zelda', date: '2026-10-12', minutes: 12.6, synced: false };
     const calls = [];
-    await pushToBackloggd(s, { upsertDailySession: async (a) => calls.push(a) });
+    await pushToBackloggd(s, { upsertDailySession: async (a) => calls.push(a) }, { now: at('2026-10-13T20:00:00Z') });
     assert.deepEqual(calls, [{ gameId: 9, date: '2026-10-12', minutes: 13 }]);
     assert.equal(s.days['ns:Zelda|2026-10-13'].synced, false);
 });
@@ -602,4 +602,28 @@ test('deleted sessions are listed for Backloggd, trying the next form shape when
 
     site = liveSite([{ id: 500, play_dates: [dayAt(12, '2026-10-14', 20)] }], undefined, { deletedField: 'nothing' });
     await assert.rejects(site.client.removeSessions(99, { ids: [12] }), /gardé/);
+});
+
+test('nothing under 5 minutes a day is sent: it waits for more play, then is dropped once old', async () => {
+    const s = emptyState();
+    s.mappings['ns:Zelda'] = { id: 9, slug: 'zelda' };
+    s.days['ns:Zelda|2026-10-13'] = { appid: 'ns:Zelda', name: 'Zelda', date: '2026-10-13', minutes: 4, synced: false };
+    const calls = [];
+    const site = { upsertDailySession: async (a) => calls.push(a), autocomplete: async () => assert.fail('no lookup for a short game') };
+    await pushToBackloggd(s, site, { now: at('2026-10-13T20:00:00Z') });
+    assert.deepEqual(calls, []);
+    assert.equal(s.days['ns:Zelda|2026-10-13'].synced, false);
+
+    s.days['ns:Zelda|2026-10-13'].minutes = 6;
+    await pushToBackloggd(s, site, { now: at('2026-10-13T21:00:00Z') });
+    assert.deepEqual(calls, [{ gameId: 9, date: '2026-10-13', minutes: 6 }]);
+
+    // A short game never matched: no lookup, no choice card, and dropped once the day is old.
+    s.days['ns:Tetris|2026-10-13'] = { appid: 'ns:Tetris', name: 'Tetris', date: '2026-10-13', minutes: 2, synced: false };
+    await pushToBackloggd(s, site, { now: at('2026-10-14T12:00:00Z') });
+    assert.equal(s.unmapped['ns:Tetris'], undefined);
+    assert.equal(s.days['ns:Tetris|2026-10-13'].synced, false);
+    await pushToBackloggd(s, site, { now: at('2026-10-17T12:00:00Z') });
+    assert.equal(s.days['ns:Tetris|2026-10-13'].synced, true);
+    assert.equal(calls.length, 1);
 });

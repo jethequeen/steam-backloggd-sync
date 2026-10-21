@@ -6,7 +6,7 @@ Une fonction Netlify planifiée (`netlify/functions/sync.mjs`) s'exécute aux 5 
 
 1. Elle lit le temps de jeu total de chaque jeu via l'API Web Steam (`GetOwnedGames`).
 2. Elle compare avec la lecture précédente, gardée dans Netlify Blobs, et additionne la différence au total du jour pour chaque jeu.
-3. Elle écrit ce total dans une session datée du jour, sans note, sur la dernière partie (playthrough) du jeu dans Backloggd. Si le jeu n'a pas encore de partie, il est ajouté à « Playing » et une partie est créée. Le site retient l'identifiant de chaque session écrite pour la retrouver ; les anciennes sessions notées `Steam` perdent la note à leur prochaine mise à jour.
+3. Dès que ce total atteint 5 minutes (en dessous, il attend que le temps s'additionne ; après 3 jours il est abandonné), elle l'écrit dans une session datée du jour, sans note, sur la dernière partie (playthrough) du jeu dans Backloggd. Si le jeu n'a pas encore de partie, il est ajouté à « Playing » et une partie est créée. Le site retient l'identifiant de chaque session écrite pour la retrouver ; les anciennes sessions notées `Steam` perdent la note à leur prochaine mise à jour.
 
 Le premier passage ne fait que mémoriser le point de départ : rien de ton historique n'est importé.
 
