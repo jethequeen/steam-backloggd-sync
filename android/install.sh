@@ -3,6 +3,9 @@
 #   curl -sL https://raw.githubusercontent.com/jethequeen/steam-backloggd-sync/main/android/install.sh | bash
 # Needs the Termux:API app, and rish set up for Shizuku. Re-run it to update.
 set -euo pipefail
+# Wrapped in a function so bash reads the whole script before running it: with `curl | bash`,
+# a command reading stdin (pkg) would otherwise swallow the rest of the script.
+main() {
 REF="${REF:-main}"
 RAW="https://raw.githubusercontent.com/jethequeen/steam-backloggd-sync/$REF/android"
 BIN="$HOME/.local/bin"
@@ -10,7 +13,7 @@ ENV_FILE="$HOME/.config/backloggd-eden.env"
 STATE_FILE="$HOME/.local/state/backloggd-eden.json"
 
 echo "Installation des paquets (python, termux-api)…"
-pkg install -y python termux-api >/dev/null 2>&1 || pkg install -y python termux-api
+pkg install -y python termux-api >/dev/null 2>&1 </dev/null || pkg install -y python termux-api </dev/null
 
 mkdir -p "$BIN" "$HOME/.config" "$HOME/.local/state"
 curl -fsSL "$RAW/backloggd-eden.py" -o "$BIN/backloggd-eden.py"
@@ -43,3 +46,5 @@ termux-job-scheduler --job-id 4242 --period-ms 900000 --persisted true --script 
 
 python "$BIN/backloggd-eden.py" --test
 echo "Installé : vérification aux 15 minutes."
+}
+main "$@"
